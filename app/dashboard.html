@@ -56,6 +56,7 @@
   .bar i{display:block;height:100%;background:var(--gold);width:0}
   tr.pick{cursor:pointer} tr.pick:hover td{background:var(--panel2)}
   tr.bad td{opacity:.45}
+  tr.bhrow td{background:var(--panel2)}
   .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11.5px;background:var(--panel2);color:var(--dim)}
   .tag.ok{color:var(--down)} .tag.run{color:var(--gold)} .tag.bad{color:var(--up)}
   details summary{cursor:pointer;color:var(--dim);font-size:13px}
@@ -129,8 +130,10 @@
       <label>樣本內比例<input id="split" type="number" min="0.3" max="0.9" step="0.05" value="0.67"></label>
       <label>排序依據（樣本內）<select id="objective"></select></label>
       <label>樣本內最少交易數<input id="mintr" type="number" value="30" min="0"></label>
+      <label>滾動驗證：測試段數 k<input id="wfk" type="number" value="4" min="0" max="12"></label>
+      <label>滾動驗證：訓練段數 m<input id="wfm" type="number" value="2" min="1" max="8"></label>
     </div>
-    <p class="hint">前段當樣本內，用來挑參數；後段當樣本外，只看結果不參與排序。樣本外撐不住的參數，實盤大多也撐不住。</p>
+    <p class="hint">單次切分：前段挑參數、後段只看結果。滾動驗證：區間切成 m+k 等份，每次用 m 段挑參數、下一段測試，共測 k 次再接起來，模擬「定期重新調參數」實際會拿到的績效。k 設 0 可關閉。</p>
     <div class="row" style="margin-top:12px">
       <button class="act" id="runopt">開始最佳化</button>
       <button class="sec" id="stopopt" disabled>停止</button>
@@ -501,14 +504,16 @@ let OPTJOB = null;
 $("#runopt").onclick = async () => {
   try {
     const j = await api("/api/optimize", {method: "POST", body: {req: curReq(), grid: optGrid(), split: Number($("#split").value),
-      objective: $("#objective").value, min_trades: Number($("#mintr").value)}});
+      objective: $("#objective").value, min_trades: Number($("#mintr").value),
+      wf_k: Number($("#wfk").value), wf_m: Number($("#wfm").value)}});
     OPTJOB = j.id; $("#runopt").disabled = true; $("#stopopt").disabled = false; $("#optout").innerHTML = "";
     pollOpt();
   } catch (e) { $("#optstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 };
 $("#stopopt").onclick = () => OPTJOB && api(`/api/jobs/${OPTJOB}/stop`, {method: "POST"});
-async function pollOpt() {
+async function pollOpt(resumed) {
   const j = await api(`/api/jobs/${OPTJOB}`).catch(e => ({status: "error", error: e.message}));
+  if (resumed && j.status !== "running") { if (j.result) renderOpt(j.result); return; }
   const pct = j.total ? j.done / j.total * 100 : 0;
   $("#optbar").style.width = pct + "%";
   $("#optstat").innerHTML = j.status === "running" ? `<span class="tag run">執行中</span> ${j.done}／${j.total || "?"}`
@@ -519,21 +524,69 @@ async function pollOpt() {
 }
 function renderOpt(r) {
   const out = $("#optout"); out.innerHTML = "";
-  const p = el("div", {className: "panel"});
-  const robustTxt = r.robust_pct >= 60 ? "大多數好參數在樣本外仍賺錢，邏輯有一定穩健度"
-    : r.robust_pct >= 35 ? "好參數在樣本外有一半左右撐住，要謹慎挑選鄰近都不錯的參數區"
-    : "好參數到樣本外大多失效，過度擬合的風險高";
-  p.append(el("div", {className: "verdict"}, `樣本內前 20% 的參數組合中，樣本外仍賺錢的有 ${fmt(r.robust_pct)}%：${robustTxt}。`));
-  p.append(el("p", {className: "hint"}, `切分日 ${r.split_date}；有效組合 ${r.valid}／${r.done}（排除樣本內交易數不足者）；排序：${META.objectives[r.objective]}。點一列可以把參數帶回回測頁執行。`));
-  let t = `<tr><th class="l">參數</th><th>內 交易</th><th>內 淨利</th><th>內 PF</th><th>內 回撤</th><th>內 淨利/回撤</th><th>外 交易</th><th>外 淨利</th><th>外 PF</th><th>外 回撤</th></tr>`;
+  const objName = META.objectives[r.objective];
+  // ---- 穩健度
+  const p0 = el("div", {className: "panel"});
+  p0.append(el("h2", {}, "穩健度"));
+  const rc = r.rank_corr;
+  const rcTxt = rc === null || rc === undefined ? "組合太少，無法計算" : rc >= 0.5 ? "樣本內排名對樣本外有不錯的預測力" : rc >= 0.2 ? "有一點預測力，但不強" : "樣本內挑得好不代表樣本外好，參數優化的意義有限";
+  const g = el("div", {className: "grid"});
+  [["排名一致性", rc ?? "–", rcTxt],
+   ["樣本內前 20% 優於樣本外中位數", fmt(r.beat_median_pct) + "%", "扣掉行情的共同影響；50% 左右等於沒挑"],
+   ["樣本內前 20% 樣本外賺錢", fmt(r.robust_pct) + "%", "會受行情影響，僅供參考"],
+   ["樣本內最差 20% 樣本外也賺錢", fmt(r.tail_profit_pct) + "%", "越高代表樣本外行情本身越有利"]]
+    .forEach(([k, v, h]) => { const d = el("div"); d.innerHTML = `<div class="hint">${k}</div><div style="font-size:17px">${v}</div><div class="hint">${h}</div>`; g.append(d); });
+  p0.append(g);
+  if (r.regime_flag) p0.append(el("div", {className: "verdict", style: "margin-top:12px;border-left-color:var(--warn)"},
+    `樣本外期間行情對這支策略特別有利：連樣本內最差的組合，樣本外也有 ${fmt(r.tail_profit_pct)}% 賺錢。樣本外的獲利大多來自行情，不能拿來證明參數有效，請以滾動驗證和「優於中位數」為準。`));
+  p0.append(el("p", {className: "hint"}, `切分日 ${r.split_date}；有效組合 ${r.valid}／${r.done}；排序：${objName}`));
+  out.append(p0);
+
+  // ---- 滾動驗證
+  const w = r.wf;
+  if (w && w.stitched) {
+    const st = w.stitched, bh = w.bh;
+    const p1 = el("div", {className: "panel"});
+    p1.append(el("h2", {}, `滾動驗證（${w.m} 段訓練 → 1 段測試，共 ${w.k} 次）`));
+    const beat = st.ret_mdd > bh.ret_mdd;
+    p1.append(el("div", {className: "verdict"}, (st.pf < 1 ? "定期重新調參數的流程，接起來是虧損的。" :
+      beat ? `接起來的測試段報酬／回撤 ${fmt(st.ret_mdd, 2)}，優於同期買進持有的 ${fmt(bh.ret_mdd, 2)}。` :
+             `接起來的測試段報酬／回撤 ${fmt(st.ret_mdd, 2)}，不如同期買進持有的 ${fmt(bh.ret_mdd, 2)}。`) +
+      `　${w.k} 次挑選中參數換了 ${w.param_changes} 次` + (w.param_changes >= Math.max(2, w.k - 1) ? "，每次都不一樣，代表參數不穩定。" : "。")));
+    const vs = el("div", {className: "vs"});
+    vs.append(el("div", {className: "h"}, `測試段 ${esc(w.test_range.join(" ～ "))}`), el("div", {className: "h v"}, "滾動驗證"), el("div", {className: "h v"}, "買進持有"));
+    [["累積報酬", sgn(st.ret_pct, 2, "%"), sgn(bh.ret_pct, 2, "%")], ["最大回撤", fmt(st.mdd_pct, 2) + "%", fmt(bh.mdd_pct, 2) + "%"],
+     ["報酬／回撤", fmt(st.ret_mdd, 2), fmt(bh.ret_mdd, 2)], ["獲利因子", fmt(st.pf, 2), "–"], ["交易筆數", st.trades, "–"]]
+      .forEach(([k, a, c]) => vs.append(el("div", {className: "k"}, k), el("div", {className: "v"}, a), el("div", {className: "v"}, c)));
+    p1.append(vs);
+    let t = `<tr><th class="l">測試期間</th><th class="l">當次選中參數</th><th>訓練 PF</th><th>測試 交易</th><th>測試 PF</th><th>測試 報酬%</th><th>持有 報酬%</th></tr>`;
+    w.folds.forEach(f => {
+      if (!f.params) { t += `<tr><td class="l">${f.test.join("～")}</td><td class="l dimc" colspan="6">訓練段交易數不足 ${w.fold_min_trades}，沒有選出參數</td></tr>`; return; }
+      t += `<tr><td class="l">${f.test.join("～")}</td><td class="l">${Object.entries(f.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" ")}</td>
+        <td>${fmt(f.train_s.pf, 2)}</td><td>${f.test_s.trades}</td><td>${fmt(f.test_s.pf, 2)}</td><td>${sgn(f.test_s.ret_pct, 2)}</td><td>${sgn(f.bh.ret_pct, 2)}</td></tr>`;
+    });
+    p1.append(el("div", {className: "scroll", style: "margin-top:12px"}, `<table>${t}</table>`));
+    p1.append(el("p", {className: "hint"}, `每段訓練至少 ${w.fold_min_trades} 筆交易才列入挑選。`));
+    out.append(p1);
+  }
+
+  // ---- 單次切分表
+  const p2 = el("div", {className: "panel"});
+  p2.append(el("h2", {}, "單次切分：各參數組合"));
+  p2.append(el("p", {className: "hint"}, "第一列是同期買進持有。報酬% 是 1 倍名目、不複利。點一列可以把參數帶回回測頁執行。"));
+  const bi = r.bh_is, bo = r.bh_os;
+  let t = `<tr><th class="l">參數</th><th>內 交易</th><th>內 PF</th><th>內 報酬%</th><th>內 報酬/回撤</th><th>外 交易</th><th>外 PF</th><th>外 報酬%</th><th>外 報酬/回撤</th></tr>`;
+  t += `<tr class="bhrow"><td class="l gold">買進持有</td><td>–</td><td>–</td><td>${sgn(bi.ret_pct, 2)}</td><td>${fmt(bi.ret_mdd, 2)}</td><td>–</td><td>–</td><td>${sgn(bo.ret_pct, 2)}</td><td>${fmt(bo.ret_mdd, 2)}</td></tr>`;
   r.rows.forEach((x, i) => {
-    t += `<tr class="pick ${x.ok ? "" : "bad"}" data-i="${i}"><td class="l">${Object.entries(x.params).map(([k, v]) => `${k}=${v}`).join(" ")}</td>
-      <td>${x.is.trades}</td><td>${sgn(x.is.net_pts)}</td><td>${fmt(x.is.pf, 2)}</td><td>${fmt(x.is.mdd_pts)}</td><td>${fmt(x.is.net_mdd, 2)}</td>
-      <td>${x.os.trades}</td><td>${sgn(x.os.net_pts)}</td><td>${fmt(x.os.pf, 2)}</td><td>${fmt(x.os.mdd_pts)}</td></tr>`;
+    const bI = x.is.ret_mdd > bi.ret_mdd, bO = x.os.ret_mdd > bo.ret_mdd;
+    t += `<tr class="pick ${x.ok ? "" : "bad"}" data-i="${i}"><td class="l">${Object.entries(x.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" ")}</td>
+      <td>${x.is.trades}</td><td>${fmt(x.is.pf, 2)}</td><td>${sgn(x.is.ret_pct, 2)}</td><td>${bI ? `<b>${fmt(x.is.ret_mdd, 2)}</b>` : fmt(x.is.ret_mdd, 2)}</td>
+      <td>${x.os.trades}</td><td>${fmt(x.os.pf, 2)}</td><td>${sgn(x.os.ret_pct, 2)}</td><td>${bO ? `<b>${fmt(x.os.ret_mdd, 2)}</b>` : fmt(x.os.ret_mdd, 2)}</td></tr>`;
   });
-  p.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
-  out.append(p);
-  p.querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => {
+  p2.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  p2.append(el("p", {className: "hint"}, "報酬／回撤加粗 = 贏過同期買進持有。"));
+  out.append(p2);
+  p2.querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => {
     const x = r.rows[tr.dataset.i];
     $("#params").querySelectorAll("input").forEach(inp => { if (inp.dataset.k in x.params) inp.value = x.params[inp.dataset.k]; });
     document.querySelector('#nav button[data-t="bt"]').click();
@@ -566,7 +619,11 @@ $("#stopdl").onclick = () => DLJOB && api(`/api/jobs/${DLJOB}/stop`, {method: "P
 async function pollDl() {
   const j = await api(`/api/jobs/${DLJOB}`).catch(e => ({status: "error", error: e.message}));
   $("#dlbar").style.width = (j.total ? j.done / j.total * 100 : 0) + "%";
-  if (j.status === "running") { $("#dlstat").innerHTML = `<span class="tag run">下載中</span> ${j.label}：${j.done}／${j.total || "?"} 天`; return setTimeout(pollDl, 1500); }
+  if (j.status === "running") {
+    $("#dlstat").innerHTML = `<span class="tag run">下載中</span> ${esc(j.label)}：${j.done}／${j.total || "?"} 天`;
+    if (!pollDl.t || Date.now() - pollDl.t > 20000) { pollDl.t = Date.now(); api("/api/meta").then(m => { META.data = m.data; renderInv(); }).catch(() => {}); }
+    return setTimeout(pollDl, 1500);
+  }
   $("#rundl").disabled = false; $("#stopdl").disabled = true;
   if (j.status === "error") $("#dlstat").innerHTML = `<span class="err">${esc(j.error)}</span>`;
   else $("#dlstat").innerHTML = `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span> ` + (j.result ? j.result.log.join("；") + (j.result.failed.length ? `<br><span class="err">${j.result.failed.slice(0, 3).map(esc).join("<br>")}</span>` : "") : "");
@@ -618,7 +675,22 @@ $("#runcmp").onclick = async () => {
   } catch (e) { $("#cmpstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 };
 
-loadMeta().then(loadPresets).catch(e => document.querySelector("main").prepend(el("div", {className: "panel err"}, e.message)));
+// 重新整理或重新登入後，接回背景工作的進度；上一次最佳化的結果也一併載回
+async function resumeJobs() {
+  let list = [];
+  try { list = await api("/api/jobs"); } catch (e) { return; }
+  const dl = list.find(j => j.kind === "download" && j.status === "running");
+  if (dl) { DLJOB = dl.id; $("#rundl").disabled = true; $("#stopdl").disabled = false; pollDl(); }
+  const op = list.find(j => j.kind === "optimize");
+  if (op) {
+    OPTJOB = op.id;
+    if (op.status === "running") { $("#runopt").disabled = true; $("#stopopt").disabled = false; }
+    else $("#optstat").innerHTML = `<span class="tag ok">上一次最佳化</span> ${esc(op.label)}`;
+    pollOpt(true);
+  }
+}
+
+loadMeta().then(loadPresets).then(resumeJobs).catch(e => document.querySelector("main").prepend(el("div", {className: "panel err"}, e.message)));
 </script>
 </body>
 </html>
