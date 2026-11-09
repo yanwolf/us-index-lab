@@ -30,7 +30,11 @@ from . import store
 from .instruments import INSTRUMENTS
 
 BASE = "https://datafeed.dukascopy.com/datafeed"
-UA = {"User-Agent": "Mozilla/5.0 (us-index-lab historical downloader)"}
+UA = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "*/*",
+    "Referer": "https://www.dukascopy.com/",
+}
 REC = struct.Struct(">5if")
 WORKERS = int(os.getenv("DUKA_WORKERS", "4"))
 DIVISORS = [1000, 100, 10, 1, 10000, 100000]
@@ -54,11 +58,57 @@ def fetch_raw(code, d, retries=4):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return b""
-            err = e
-        except Exception as e:      # 逾時、連線中斷、解壓失敗
-            err = e
+            err = f"HTTP {e.code} {e.reason}"
+            if e.code in (429, 503):
+                time.sleep(5 * (k + 1))
+        except urllib.error.URLError as e:
+            err = f"連線失敗：{e.reason}"
+        except lzma.LZMAError as e:
+            err = f"解壓失敗（伺服器回傳的不是資料檔）：{e}"
+        except Exception as e:      # 逾時等
+            err = f"{type(e).__name__}: {e}"
         time.sleep(1.5 * (k + 1))
-    raise RuntimeError(f"{d} 下載失敗：{err!r}")
+    raise RuntimeError(f"{d} 下載失敗：{err}")
+
+
+def diagnose(symbol):
+    """連線診斷：一般外網、Dukascopy 首頁、實際資料檔，各回報狀態。"""
+    code = INSTRUMENTS[symbol]["duka"]
+    d = datetime.now(timezone.utc).date() - timedelta(days=7)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    tests = [("一般外網", "https://pypi.org/simple/"),
+             ("Dukascopy 首頁", "https://www.dukascopy.com/"),
+             ("Dukascopy 資料檔", url_for(code, d))]
+    out = []
+    for name, url in tests:
+        r = {"name": name, "url": url}
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read()
+            r.update(status=resp.status, bytes=len(body), ctype=resp.headers.get("Content-Type"))
+            if name == "Dukascopy 資料檔":
+                try:
+                    rows = parse(lzma.decompress(body, format=lzma.FORMAT_ALONE)) if body else []
+                    r["rows"] = len(rows)
+                    if len(rows):
+                        r["sample_raw"] = rows[len(rows) // 2, 1:5].tolist()
+                except Exception as e:
+                    r["decode_error"] = str(e)
+                    r["body_head"] = body[:200].decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            r.update(status=e.code, error=f"HTTP {e.code} {e.reason}")
+            try:
+                r["body_head"] = e.read()[:200].decode("utf-8", "replace")
+            except Exception:
+                pass
+        except Exception as e:
+            r.update(status=None, error=f"{type(e).__name__}: {getattr(e, 'reason', e)}")
+        r["ms"] = int((time.time() - t0) * 1000)
+        out.append(r)
+    return out
 
 
 def parse(raw):

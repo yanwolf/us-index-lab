@@ -46,6 +46,11 @@ def full_report(req):
         t["exit_time"] = fmt(t.pop("exit_ts"))
         t["ret_pct"] = round(t["ret_pct"], 3)
         tl.append(t)
-    return {"summary": summ, "buy_hold": bh, "yearly": metrics.yearly(trades),
+    cls = REGISTRY[req["strategy"]]
+    params = cls.all_inputs()
+    params.update({k: v for k, v in (req.get("params") or {}).items() if k in params})
+    return {"strategy": req["strategy"], "symbol": req["symbol"], "source": req.get("source", "duka"),
+            "params": params, "align": req.get("align", "session"),
+            "summary": summ, "buy_hold": bh, "yearly": metrics.yearly(trades),
             "equity": metrics.equity_series(daily), "trades": tl, "costs": res["costs"],
             "minutes": res["minutes"], "range": [metrics.tday_str(daily[0][0]), metrics.tday_str(daily[-1][0])] if daily else None}

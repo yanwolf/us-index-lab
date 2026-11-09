@@ -75,6 +75,11 @@ async def download(body: dict):
     return jobs.public(job)
 
 
+@app.get("/api/duka_test")
+async def duka_test(symbol: str = "US500"):
+    return await run_in_threadpool(dukascopy.diagnose, symbol)
+
+
 @app.post("/api/import_mt5")
 async def import_mt5(file: UploadFile = File(...), broker: str = Form(...), symbol: str = Form(...)):
     if symbol not in INSTRUMENTS:
