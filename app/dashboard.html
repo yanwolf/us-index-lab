@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>美股指數回測室</title>
+<style>
+  :root{
+    --bg:#12161c; --panel:#1a2029; --panel2:#212834; --line:#2c3543; --ink:#e6e9ee; --dim:#8b95a5;
+    --up:#e5484d; --down:#2fb36b; --warn:#e0a83a; --gold:#d4a73a; --blue:#7fb3ff;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+  body{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+  header{display:flex;align-items:baseline;gap:12px;padding:14px 16px 6px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.02em}
+  header .sub{color:var(--dim);font-size:12.5px}
+  nav{display:flex;gap:4px;padding:6px 12px 0;border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:0;background:var(--bg);z-index:5}
+  nav button{background:none;border:none;color:var(--dim);padding:9px 12px;font-size:14.5px;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+  nav button.on{color:var(--ink);border-bottom-color:var(--gold)}
+  main{padding:14px 12px 40px;max-width:1180px;margin:0 auto}
+  section{display:none} section.on{display:block}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .panel h2{font-size:15px;margin:0 0 10px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--dim)}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 8px;font-size:14px;width:100%;font-variant-numeric:tabular-nums}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+  .hint{font-size:11.5px;color:var(--dim);line-height:1.35}
+  button.act{background:var(--gold);color:#1a1405;border:none;border-radius:7px;padding:9px 16px;font-weight:650;font-size:14px;cursor:pointer}
+  button.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:8px 13px;font-size:13.5px;cursor:pointer}
+  button.danger{background:none;color:var(--up);border:1px solid var(--up);border-radius:7px;padding:5px 10px;font-size:12.5px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .up{color:var(--up)} .down{color:var(--down)} .dimc{color:var(--dim)} .gold{color:var(--gold)}
+  .err{color:var(--up);white-space:pre-wrap}
+  table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
+  th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{color:var(--dim);font-weight:500;position:sticky;top:0;background:var(--panel)}
+  td.l,th.l{text-align:left}
+  .scroll{overflow-x:auto;max-height:480px;overflow-y:auto}
+  .vs{display:grid;grid-template-columns:auto 1fr 1fr;gap:0;font-variant-numeric:tabular-nums}
+  .vs div{padding:7px 10px;border-bottom:1px solid var(--line)}
+  .vs .h{color:var(--dim);font-size:12.5px}
+  .vs .k{color:var(--dim)}
+  .vs .v{text-align:right;font-size:15px}
+  .verdict{font-size:15px;padding:10px 12px;border-left:3px solid var(--gold);background:var(--panel2);border-radius:0 8px 8px 0;margin-bottom:12px}
+  canvas{width:100%;height:260px;display:block}
+  .legend{display:flex;gap:16px;font-size:12.5px;color:var(--dim);margin:6px 0 2px}
+  .legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+  .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;background:var(--gold);width:0}
+  tr.pick{cursor:pointer} tr.pick:hover td{background:var(--panel2)}
+  tr.bad td{opacity:.45}
+  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11.5px;background:var(--panel2);color:var(--dim)}
+  .tag.ok{color:var(--down)} .tag.run{color:var(--gold)} .tag.bad{color:var(--up)}
+  details summary{cursor:pointer;color:var(--dim);font-size:13px}
+  .params .pl{font-size:13px;color:var(--ink)}
+  .optp{display:grid;grid-template-columns:22px 110px 1fr 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
+  .optp .nm{font-size:13px}
+  @media (max-width:600px){ .optp{grid-template-columns:22px 1fr 1fr 1fr;row-gap:4px;margin-bottom:10px} .optp .nm{grid-column:2/5} .optp input[type=number]:nth-of-type(2){grid-column:2} .optp.hint{display:none} }
+</style>
+</head>
+<body>
+<header>
+  <h1>美股指數回測室</h1>
+  <span class="sub">標普 500／那斯達克 100 CFD · 台指策略移植 · 時間皆為美東</span>
+</header>
+<nav id="nav">
+  <button data-t="bt" class="on">回測</button>
+  <button data-t="opt">最佳化</button>
+  <button data-t="data">資料</button>
+  <button data-t="cmp">資料比對</button>
+</nav>
+<main>
+
+<!-- ============ 回測 ============ -->
+<section id="bt" class="on">
+  <div class="panel">
+    <div class="grid">
+      <label>資料來源<select id="src"></select></label>
+      <label>商品<select id="sym"></select></label>
+      <label>策略<select id="strat"></select></label>
+      <label>K 棒週期（分）<input id="mins" type="number" min="1" step="1"></label>
+      <label>K 棒切法<select id="align"><option value="session">時段開盤起算（MC）</option><option value="clock">整點起算</option></select></label>
+      <label>開始<input id="start" type="date"></label>
+      <label>結束<input id="end" type="date"></label>
+    </div>
+    <p class="hint" id="sdesc"></p>
+    <details style="margin:8px 0 4px"><summary>成本（指數點）</summary>
+      <div class="grid" style="margin-top:8px">
+        <label>點差（來回一次）<input id="c_spread" type="number" step="0.1"></label>
+        <label>滑價（每邊）<input id="c_slippage" type="number" step="0.1"></label>
+        <label>手續費（每邊）<input id="c_commission" type="number" step="0.1"></label>
+        <label>多單隔夜利息 年化%<input id="c_swap_long_pct" type="number" step="0.1"></label>
+        <label>空單隔夜利息 年化%<input id="c_swap_short_pct" type="number" step="0.1"></label>
+      </div>
+      <p class="hint">預設值是常見水準。用 MT5 探測腳本匯入券商資料後，「資料比對」會算出實際點差，再填回這裡。</p>
+    </details>
+    <h2 style="margin-top:14px">策略參數</h2>
+    <div class="grid params" id="params"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="act" id="runbt">執行回測</button>
+      <button class="sec" id="reset">恢復預設參數</button>
+      <select id="presetSel" style="width:auto;min-width:160px"><option value="">載入存檔的參數…</option></select>
+      <button class="sec" id="savePreset">存目前參數</button>
+      <span id="btstat" class="dimc"></span>
+    </div>
+  </div>
+  <div id="btout"></div>
+</section>
+
+<!-- ============ 最佳化 ============ -->
+<section id="opt">
+  <div class="panel">
+    <h2>參數網格</h2>
+    <p class="hint">使用「回測」頁目前選的資料、商品、策略、期間與成本。勾選要掃描的參數並設定範圍，其他參數固定為回測頁的值。</p>
+    <div id="optgrid" style="margin-top:10px"></div>
+    <div class="grid" style="margin-top:10px">
+      <label>樣本內比例<input id="split" type="number" min="0.3" max="0.9" step="0.05" value="0.67"></label>
+      <label>排序依據（樣本內）<select id="objective"></select></label>
+      <label>樣本內最少交易數<input id="mintr" type="number" value="30" min="0"></label>
+    </div>
+    <p class="hint">前段當樣本內，用來挑參數；後段當樣本外，只看結果不參與排序。樣本外撐不住的參數，實盤大多也撐不住。</p>
+    <div class="row" style="margin-top:12px">
+      <button class="act" id="runopt">開始最佳化</button>
+      <button class="sec" id="stopopt" disabled>停止</button>
+      <span id="combos" class="dimc"></span>
+    </div>
+    <div class="bar"><i id="optbar"></i></div>
+    <div id="optstat" class="dimc"></div>
+  </div>
+  <div id="optout"></div>
+</section>
+
+<!-- ============ 資料 ============ -->
+<section id="data">
+  <div class="panel">
+    <h2>已下載的資料</h2>
+    <div class="scroll"><table id="inv"></table></div>
+  </div>
+  <div class="panel">
+    <h2>從 Dukascopy 下載 1 分 K</h2>
+    <div class="grid">
+      <label>商品<select id="dsym"></select></label>
+      <label>回溯年數<input id="dyears" type="number" value="3" min="0.1" step="0.5"></label>
+      <label>或指定開始<input id="dstart" type="date"></label>
+    </div>
+    <p class="hint">已經有的日子會跳過，最近三天會重抓，可以重複按來補資料。三年大約要抓 1,000 個檔案，視連線約 5–15 分鐘。</p>
+    <div class="row" style="margin-top:10px"><button class="act" id="rundl">開始下載</button><button class="sec" id="stopdl" disabled>停止</button></div>
+    <div class="bar"><i id="dlbar"></i></div>
+    <div id="dlstat" class="dimc"></div>
+  </div>
+  <div class="panel">
+    <h2>匯入 MT5 券商資料</h2>
+    <p class="hint">在 Windows 上用 tools/mt5_probe.py 匯出的 CSV。匯入後會變成一個獨立資料來源（例如 mt5-pepperstone），可以直接拿來回測，或到「資料比對」和 Dukascopy 對照。</p>
+    <div class="grid" style="margin-top:8px">
+      <label>券商名稱<input id="ibroker" placeholder="例如 pepperstone"></label>
+      <label>對應商品<select id="isym"></select></label>
+      <label>CSV 檔<input id="ifile" type="file" accept=".csv"></label>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="act" id="runimp">匯入</button><span id="impstat" class="dimc"></span></div>
+  </div>
+</section>
+
+<!-- ============ 比對 ============ -->
+<section id="cmp">
+  <div class="panel">
+    <h2>兩個資料來源對照</h2>
+    <p class="hint">用重疊期間逐分鐘比較收盤價差與報酬相關性。B 若是 MT5 匯入的資料，會一併算出實際點差（RTH／ETH／每小時中位數），拿來校準回測成本。</p>
+    <div class="grid" style="margin-top:8px">
+      <label>商品<select id="csym"></select></label>
+      <label>A<select id="ca"></select></label>
+      <label>B<select id="cb"></select></label>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="act" id="runcmp">比對</button><span id="cmpstat" class="dimc"></span></div>
+  </div>
+  <div id="cmpout"></div>
+</section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (t, a = {}, h = "") => { const e = document.createElement(t); Object.assign(e, a); if (h) e.innerHTML = h; return e; };
+let META = null, PRESETS = [];
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : Number(v).toLocaleString("zh-TW", {minimumFractionDigits: d, maximumFractionDigits: d});
+const sgn = (v, d = 1, suf = "") => `<span class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${fmt(v, d)}${suf}</span>`;
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, opt.body && !(opt.body instanceof FormData)
+    ? {...opt, headers: {"Content-Type": "application/json"}, body: JSON.stringify(opt.body)} : opt);
+  const j = await r.json().catch(() => ({detail: r.statusText}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === b.dataset.t));
+  if (b.dataset.t === "opt") buildOptGrid();
+});
+
+function fillSel(sel, items, keep) {
+  const cur = keep ? sel.value : null;
+  sel.innerHTML = "";
+  items.forEach(([v, t]) => sel.append(el("option", {value: v, textContent: t})));
+  if (cur && items.some(i => i[0] === cur)) sel.value = cur;
+}
+
+async function loadMeta() {
+  META = await api("/api/meta");
+  const syms = Object.entries(META.instruments).map(([k, v]) => [k, `${v.name}（${k}）`]);
+  [$("#sym"), $("#dsym"), $("#isym"), $("#csym")].forEach(s => fillSel(s, syms, true));
+  const sources = [...new Set(META.data.map(d => d.source))];
+  if (!sources.includes("duka")) sources.unshift("duka");
+  const srcName = s => s === "duka" ? "Dukascopy" : s;
+  fillSel($("#src"), sources.map(s => [s, srcName(s)]), true);
+  fillSel($("#ca"), sources.map(s => [s, srcName(s)]), true);
+  fillSel($("#cb"), sources.map(s => [s, srcName(s)]), true);
+  if ($("#cb").value === "duka" && sources.length > 1) $("#cb").value = sources.find(s => s !== "duka");
+  if (!$("#strat").options.length) {
+    fillSel($("#strat"), Object.entries(META.strategies).map(([k, v]) => [k, k]));
+    onStrat();
+    onSym();
+  }
+  fillSel($("#objective"), Object.entries(META.objectives), true);
+  renderInv();
+  defaultDates();
+}
+
+function defaultDates() {
+  const d = META.data.find(x => x.source === $("#src").value && x.symbol === $("#sym").value);
+  if (d && d.first && !$("#start").dataset.touched) {
+    const f = new Date(d.first * 1000), l = new Date(d.last * 1000);
+    f.setUTCDate(f.getUTCDate() + 30);          // 留一個月暖機
+    $("#start").value = f.toISOString().slice(0, 10);
+    $("#end").value = l.toISOString().slice(0, 10);
+  }
+}
+["#start", "#end"].forEach(s => $(s).addEventListener("change", () => $("#start").dataset.touched = 1));
+$("#src").onchange = () => { delete $("#start").dataset.touched; defaultDates(); };
+
+function onSym() {
+  const c = META.instruments[$("#sym").value].costs;
+  for (const k of ["spread", "slippage", "commission", "swap_long_pct", "swap_short_pct"]) $("#c_" + k).value = c[k];
+  delete $("#start").dataset.touched; defaultDates();
+}
+$("#sym").onchange = onSym;
+
+function onStrat(values) {
+  const s = META.strategies[$("#strat").value];
+  $("#sdesc").textContent = s.desc + `（原版 ${s.minutes} 分 K）`;
+  $("#mins").value = values?.minutes || s.minutes;
+  const box = $("#params"); box.innerHTML = "";
+  for (const [k, v] of Object.entries(s.inputs)) {
+    const lab = el("label");
+    lab.append(el("span", {className: "pl", textContent: k}));
+    const inp = el("input", {type: "number", step: "any", value: values?.params?.[k] ?? v});
+    inp.dataset.k = k;
+    lab.append(inp);
+    lab.append(el("span", {className: "hint", textContent: s.doc[k] || ""}));
+    box.append(lab);
+  }
+  buildOptGrid(true);
+}
+$("#strat").onchange = () => onStrat();
+$("#reset").onclick = () => onStrat();
+
+function curParams() {
+  const p = {};
+  $("#params").querySelectorAll("input").forEach(i => p[i.dataset.k] = Number(i.value));
+  return p;
+}
+function curReq() {
+  const costs = {};
+  for (const k of ["spread", "slippage", "commission", "swap_long_pct", "swap_short_pct"]) costs[k] = Number($("#c_" + k).value);
+  return {source: $("#src").value, symbol: $("#sym").value, strategy: $("#strat").value, minutes: Number($("#mins").value),
+          align: $("#align").value, start: $("#start").value, end: $("#end").value, costs, params: curParams()};
+}
+
+// ---------------------------------------------------------------- 回測
+$("#runbt").onclick = runBacktest;
+async function runBacktest() {
+  $("#runbt").disabled = true; $("#btstat").textContent = "回測中…";
+  try {
+    const r = await api("/api/backtest", {method: "POST", body: curReq()});
+    $("#btstat").textContent = `完成，${r.elapsed} 秒`;
+    renderResult(r);
+  } catch (e) {
+    $("#btstat").textContent = ""; $("#btout").innerHTML = `<div class="panel err">${e.message}</div>`;
+  }
+  $("#runbt").disabled = false;
+}
+
+function verdict(s, b) {
+  if (!s.trades) return "這段期間沒有任何交易，檢查參數或日期區間。";
+  const parts = [];
+  if (s.trades < 30) parts.push(`只有 ${s.trades} 筆交易，樣本太少，結果參考價值低`);
+  if (s.pf < 1) parts.push("扣成本後是虧損的");
+  else if (s.pf < 1.3) parts.push(`獲利因子 ${s.pf}，扣成本後的優勢很薄`);
+  const sr = s.mdd_pct > 0 ? s.ret_pct / s.mdd_pct : 0;
+  if (b.ret_mdd !== undefined && s.pf >= 1) {
+    if (sr > b.ret_mdd) parts.push(`報酬／回撤 ${fmt(sr, 2)} 優於買進持有的 ${fmt(b.ret_mdd, 2)}`);
+    else parts.push(`報酬／回撤 ${fmt(sr, 2)} 不如買進持有的 ${fmt(b.ret_mdd, 2)}，同樣承擔回撤，直接持有指數更好`);
+  }
+  return parts.join("；") + "。";
+}
+
+function renderResult(r) {
+  const s = r.summary, b = r.buy_hold || {}, out = $("#btout");
+  out.innerHTML = "";
+  const p1 = el("div", {className: "panel"});
+  p1.append(el("div", {className: "verdict"}, verdict(s, b)));
+  const rows = [
+    ["累積報酬（1 倍名目）", sgn(s.ret_pct, 2, "%"), sgn(b.ret_pct, 2, "%")],
+    ["年化報酬", sgn(s.ann_pct, 2, "%"), sgn(b.ann_pct, 2, "%")],
+    ["最大回撤", fmt(s.mdd_pct, 2) + "%", fmt(b.mdd_pct, 2) + "%"],
+    ["報酬／回撤", fmt(s.mdd_pct ? s.ret_pct / s.mdd_pct : 0, 2), fmt(b.ret_mdd, 2)],
+    ["Sharpe", fmt(s.sharpe, 2), fmt(b.sharpe, 2)],
+    ["持倉時間比例", fmt(s.exposure_pct, 1) + "%", "100%"],
+  ];
+  const vs = el("div", {className: "vs"});
+  vs.append(el("div", {className: "h"}, ""), el("div", {className: "h v"}, "策略"), el("div", {className: "h v"}, "買進持有"));
+  rows.forEach(([k, a, c]) => vs.append(el("div", {className: "k"}, k), el("div", {className: "v"}, a), el("div", {className: "v"}, c)));
+  p1.append(vs);
+  const g = el("div", {className: "grid", style: "margin-top:14px"});
+  const kv = [["交易筆數", s.trades + `（多 ${s.long_trades}／空 ${s.short_trades}）`], ["淨利點數", sgn(s.net_pts)],
+    ["獲利因子", fmt(s.pf, 2)], ["勝率", fmt(s.win_rate) + "%"], ["平均每筆", sgn(s.avg_pts, 2)],
+    ["賺賠比", fmt(s.payoff, 2)], ["最大回撤點數", fmt(s.mdd_pts)], ["淨利／回撤", fmt(s.net_mdd, 2)],
+    ["最多連虧", s.max_consec_loss + " 筆"], ["多方點數", sgn(s.long_pts)], ["空方點數", sgn(s.short_pts)],
+    ["期間", (r.range || []).join(" ～ ")]];
+  kv.forEach(([k, v]) => { const d = el("div"); d.innerHTML = `<div class="hint">${k}</div><div>${v}</div>`; g.append(d); });
+  p1.append(g);
+  p1.append(el("p", {className: "hint"}, `成本：點差 ${r.costs.spread}、滑價每邊 ${r.costs.slippage}、隔夜利息多 ${r.costs.swap_long_pct}%／空 ${r.costs.swap_short_pct}%；${r.minutes} 分 K`));
+  out.append(p1);
+
+  const p2 = el("div", {className: "panel"});
+  p2.append(el("h2", {}, "累積報酬 %"));
+  p2.append(el("div", {className: "legend"}, `<span><i style="background:var(--gold)"></i>策略</span><span><i style="background:var(--blue)"></i>買進持有</span>`));
+  const cv = el("canvas"); p2.append(cv);
+  const tip = el("div", {className: "hint", style: "min-height:18px"}); p2.append(tip);
+  out.append(p2);
+  drawEquity(cv, r.equity, tip);
+
+  const p3 = el("div", {className: "panel"});
+  p3.append(el("h2", {}, "逐年"));
+  let t = `<tr><th class="l">年</th><th>交易</th><th>淨利點數</th><th>報酬%</th><th>勝率</th></tr>`;
+  r.yearly.forEach(y => t += `<tr><td class="l">${y.year}</td><td>${y.trades}</td><td>${sgn(y.net_pts)}</td><td>${sgn(y.ret_pct, 2)}</td><td>${fmt(y.win_rate)}%</td></tr>`);
+  p3.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  out.append(p3);
+
+  const p4 = el("div", {className: "panel"});
+  p4.append(el("h2", {}, `交易明細（${r.trades.length} 筆，最新在上）`));
+  let tt = `<tr><th class="l">進場</th><th class="l">出場</th><th>方向</th><th>進場價</th><th>出場價</th><th>淨點數</th><th>報酬%</th><th>最大浮盈</th><th>K 數</th><th class="l">進場</th><th class="l">出場原因</th></tr>`;
+  r.trades.slice().reverse().slice(0, 500).forEach(x => tt += `<tr><td class="l">${x.entry_time}</td><td class="l">${x.exit_time}</td><td>${x.dir > 0 ? '<span class="up">多</span>' : '<span class="down">空</span>'}</td><td>${fmt(x.entry, 2)}</td><td>${fmt(x.exit, 2)}</td><td>${sgn(x.net, 2)}</td><td>${sgn(x.ret_pct, 2)}</td><td>${fmt(x.mfe, 1)}</td><td>${x.bars}</td><td class="l">${x.in}</td><td class="l">${x.out}</td></tr>`);
+  p4.append(el("div", {className: "scroll"}, `<table>${tt}</table>`));
+  if (r.trades.length > 500) p4.append(el("p", {className: "hint"}, "只列最近 500 筆"));
+  out.append(p4);
+}
+
+function drawEquity(cv, data, tip) {
+  if (!data || !data.length) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const c = cv.getContext("2d"); c.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const padL = 44, padR = 8, padT = 8, padB = 22;
+  const ys = data.flatMap(d => [d[1], d[2]]).concat([0]);
+  let lo = Math.min(...ys), hi = Math.max(...ys); if (hi - lo < 1) { hi += 1; lo -= 1; }
+  const X = i => padL + (W - padL - padR) * i / Math.max(1, data.length - 1);
+  const Y = v => padT + (H - padT - padB) * (hi - v) / (hi - lo);
+  c.font = "11px sans-serif"; c.fillStyle = css.getPropertyValue("--dim"); c.strokeStyle = css.getPropertyValue("--line"); c.lineWidth = 1;
+  const step = niceStep((hi - lo) / 5);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    c.beginPath(); c.moveTo(padL, Y(v)); c.lineTo(W - padR, Y(v)); c.stroke();
+    c.fillText(v.toFixed(step < 1 ? 1 : 0) + "%", 2, Y(v) + 4);
+  }
+  c.fillText(data[0][0], padL, H - 6);
+  const lt = data[data.length - 1][0]; c.fillText(lt, W - padR - c.measureText(lt).width, H - 6);
+  const line = (k, col, w) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); data.forEach((d, i) => i ? c.lineTo(X(i), Y(d[k])) : c.moveTo(X(i), Y(d[k]))); c.stroke(); };
+  line(2, css.getPropertyValue("--blue"), 1.3);
+  line(1, css.getPropertyValue("--gold"), 2);
+  const show = ev => {
+    const r = cv.getBoundingClientRect(); const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    const i = Math.max(0, Math.min(data.length - 1, Math.round((x - padL) / (W - padL - padR) * (data.length - 1))));
+    const d = data[i]; tip.innerHTML = `${d[0]}　策略 ${sgn(d[1], 2, "%")}（${sgn(d[3], 1, " 點")}）　買進持有 ${sgn(d[2], 2, "%")}`;
+  };
+  cv.onpointermove = show; cv.ontouchmove = show;
+}
+function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x))); const m = x / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; }
+
+// ---------------------------------------------------------------- 參數存檔
+async function loadPresets() {
+  PRESETS = await api("/api/presets");
+  const sel = $("#presetSel"); sel.innerHTML = `<option value="">載入存檔的參數…</option>`;
+  PRESETS.forEach((p, i) => sel.append(el("option", {value: i, textContent: `${p.name}（${p.strategy}／${p.symbol}）`})));
+}
+$("#presetSel").onchange = () => {
+  const p = PRESETS[$("#presetSel").value]; if (!p) return;
+  $("#strat").value = p.strategy; if (p.symbol) $("#sym").value = p.symbol;
+  if (p.align) $("#align").value = p.align;
+  onStrat({minutes: p.minutes, params: p.params});
+  $("#btstat").textContent = `已載入「${p.name}」`;
+};
+$("#savePreset").onclick = async () => {
+  const name = prompt("這組參數的名稱", `${$("#strat").value} ${$("#sym").value}`);
+  if (!name) return;
+  const r = curReq();
+  await api("/api/presets", {method: "POST", body: {name, strategy: r.strategy, symbol: r.symbol, minutes: r.minutes, align: r.align, params: r.params}});
+  await loadPresets(); $("#btstat").textContent = `已存「${name}」`;
+};
+
+// ---------------------------------------------------------------- 最佳化
+function buildOptGrid(force) {
+  const box = $("#optgrid");
+  if (!META || (!force && box.dataset.strat === $("#strat").value)) return;
+  box.dataset.strat = $("#strat").value; box.innerHTML = "";
+  const head = el("div", {className: "optp hint"}, `<span></span><span>參數</span><span>起</span><span>迄</span><span>步距</span>`);
+  box.append(head);
+  const p = curParams(), doc = META.strategies[$("#strat").value].doc;
+  for (const [k, v] of Object.entries(p)) {
+    const row = el("div", {className: "optp"});
+    const cb = el("input", {type: "checkbox"}); cb.dataset.k = k; cb.style.width = "auto";
+    const isInt = Number.isInteger(v) && !["LOSS", "WIN", "Twin", "Tstop", "BLOSS", "BWIN", "SLOSS", "SWIN", "BMax", "BTB", "SMax", "STB", "BB", "SS", "ATRX"].includes(k);
+    const st = isInt ? Math.max(1, Math.round(Math.abs(v) * 0.2)) : Math.max(0.1, +(Math.abs(v) * 0.25).toFixed(1));
+    const a = el("input", {type: "number", step: "any", value: +(v - 2 * st).toFixed(2)});
+    const b = el("input", {type: "number", step: "any", value: +(v + 2 * st).toFixed(2)});
+    const s = el("input", {type: "number", step: "any", value: st});
+    if (isInt && +a.value < 1) a.value = 1;
+    row.append(cb, el("span", {className: "nm", title: doc[k] || ""}, `${k} <span class="hint">${doc[k] || ""}</span>`), a, b, s);
+    [cb, a, b, s].forEach(x => x.oninput = countCombos);
+    box.append(row);
+  }
+  countCombos();
+}
+function optGrid() {
+  const g = {};
+  $("#optgrid").querySelectorAll(".optp").forEach(r => {
+    const cb = r.querySelector("input[type=checkbox]"); if (!cb || !cb.checked) return;
+    const [a, b, s] = [...r.querySelectorAll("input[type=number]")].map(x => Number(x.value));
+    g[cb.dataset.k] = [a, b, s];
+  });
+  return g;
+}
+function countCombos() {
+  const g = optGrid(); let n = 1;
+  Object.values(g).forEach(([a, b, s]) => n *= s > 0 ? Math.floor((b - a) / s + 1e-9) + 1 : 1);
+  $("#combos").textContent = Object.keys(g).length ? `共 ${n.toLocaleString()} 組（上限 ${META.max_combos.toLocaleString()}，${META.workers} 核心）` : "還沒勾選參數";
+}
+let OPTJOB = null;
+$("#runopt").onclick = async () => {
+  try {
+    const j = await api("/api/optimize", {method: "POST", body: {req: curReq(), grid: optGrid(), split: Number($("#split").value),
+      objective: $("#objective").value, min_trades: Number($("#mintr").value)}});
+    OPTJOB = j.id; $("#runopt").disabled = true; $("#stopopt").disabled = false; $("#optout").innerHTML = "";
+    pollOpt();
+  } catch (e) { $("#optstat").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+$("#stopopt").onclick = () => OPTJOB && api(`/api/jobs/${OPTJOB}/stop`, {method: "POST"});
+async function pollOpt() {
+  const j = await api(`/api/jobs/${OPTJOB}`).catch(e => ({status: "error", error: e.message}));
+  const pct = j.total ? j.done / j.total * 100 : 0;
+  $("#optbar").style.width = pct + "%";
+  $("#optstat").innerHTML = j.status === "running" ? `<span class="tag run">執行中</span> ${j.done}／${j.total || "?"}`
+    : j.status === "error" ? `<span class="err">${j.error}</span>` : `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span>`;
+  if (j.status === "running") return setTimeout(pollOpt, 1200);
+  $("#runopt").disabled = false; $("#stopopt").disabled = true;
+  if (j.result) renderOpt(j.result);
+}
+function renderOpt(r) {
+  const out = $("#optout"); out.innerHTML = "";
+  const p = el("div", {className: "panel"});
+  const robustTxt = r.robust_pct >= 60 ? "大多數好參數在樣本外仍賺錢，邏輯有一定穩健度"
+    : r.robust_pct >= 35 ? "好參數在樣本外有一半左右撐住，要謹慎挑選鄰近都不錯的參數區"
+    : "好參數到樣本外大多失效，過度擬合的風險高";
+  p.append(el("div", {className: "verdict"}, `樣本內前 20% 的參數組合中，樣本外仍賺錢的有 ${fmt(r.robust_pct)}%：${robustTxt}。`));
+  p.append(el("p", {className: "hint"}, `切分日 ${r.split_date}；有效組合 ${r.valid}／${r.done}（排除樣本內交易數不足者）；排序：${META.objectives[r.objective]}。點一列可以把參數帶回回測頁執行。`));
+  let t = `<tr><th class="l">參數</th><th>內 交易</th><th>內 淨利</th><th>內 PF</th><th>內 回撤</th><th>內 淨利/回撤</th><th>外 交易</th><th>外 淨利</th><th>外 PF</th><th>外 回撤</th></tr>`;
+  r.rows.forEach((x, i) => {
+    t += `<tr class="pick ${x.ok ? "" : "bad"}" data-i="${i}"><td class="l">${Object.entries(x.params).map(([k, v]) => `${k}=${v}`).join(" ")}</td>
+      <td>${x.is.trades}</td><td>${sgn(x.is.net_pts)}</td><td>${fmt(x.is.pf, 2)}</td><td>${fmt(x.is.mdd_pts)}</td><td>${fmt(x.is.net_mdd, 2)}</td>
+      <td>${x.os.trades}</td><td>${sgn(x.os.net_pts)}</td><td>${fmt(x.os.pf, 2)}</td><td>${fmt(x.os.mdd_pts)}</td></tr>`;
+  });
+  p.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  out.append(p);
+  p.querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => {
+    const x = r.rows[tr.dataset.i];
+    $("#params").querySelectorAll("input").forEach(inp => { if (inp.dataset.k in x.params) inp.value = x.params[inp.dataset.k]; });
+    document.querySelector('#nav button[data-t="bt"]').click();
+    runBacktest();
+  });
+}
+
+// ---------------------------------------------------------------- 資料
+function renderInv() {
+  const t = $("#inv");
+  if (!META.data.length) { t.innerHTML = `<tr><td class="l dimc">還沒有資料。先在下面從 Dukascopy 下載。</td></tr>`; return; }
+  const d = ts => ts ? new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ") : "–";
+  let h = `<tr><th class="l">來源</th><th class="l">商品</th><th>1 分 K 數</th><th class="l">第一筆（UTC）</th><th class="l">最後一筆（UTC）</th><th>年數</th><th></th></tr>`;
+  META.data.forEach(x => h += `<tr><td class="l">${x.source === "duka" ? "Dukascopy" : x.source}</td><td class="l">${x.symbol}</td><td>${x.rows.toLocaleString()}</td><td class="l">${d(x.first)}</td><td class="l">${d(x.last)}</td><td>${fmt((x.last - x.first) / 31557600, 2)}</td>
+    <td><button class="danger" data-s="${x.source}" data-y="${x.symbol}">刪除</button></td></tr>`);
+  t.innerHTML = h;
+  t.querySelectorAll("button.danger").forEach(b => b.onclick = async () => {
+    if (!confirm(`刪除 ${b.dataset.s}/${b.dataset.y} 的所有資料？`)) return;
+    await api("/api/delete_data", {method: "POST", body: {source: b.dataset.s, symbol: b.dataset.y}}); loadMeta();
+  });
+}
+let DLJOB = null;
+$("#rundl").onclick = async () => {
+  try {
+    const j = await api("/api/download", {method: "POST", body: {symbol: $("#dsym").value, years: Number($("#dyears").value), start: $("#dstart").value || null}});
+    DLJOB = j.id; $("#rundl").disabled = true; $("#stopdl").disabled = false; pollDl();
+  } catch (e) { $("#dlstat").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+$("#stopdl").onclick = () => DLJOB && api(`/api/jobs/${DLJOB}/stop`, {method: "POST"});
+async function pollDl() {
+  const j = await api(`/api/jobs/${DLJOB}`).catch(e => ({status: "error", error: e.message}));
+  $("#dlbar").style.width = (j.total ? j.done / j.total * 100 : 0) + "%";
+  if (j.status === "running") { $("#dlstat").innerHTML = `<span class="tag run">下載中</span> ${j.label}：${j.done}／${j.total || "?"} 天`; return setTimeout(pollDl, 1500); }
+  $("#rundl").disabled = false; $("#stopdl").disabled = true;
+  if (j.status === "error") $("#dlstat").innerHTML = `<span class="err">${j.error}</span>`;
+  else $("#dlstat").innerHTML = `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span> ` + (j.result ? j.result.log.join("；") + (j.result.failed.length ? `<br><span class="err">${j.result.failed.slice(0, 3).join("<br>")}</span>` : "") : "");
+  loadMeta();
+}
+$("#runimp").onclick = async () => {
+  const f = $("#ifile").files[0], br = $("#ibroker").value.trim();
+  if (!f || !br) { $("#impstat").textContent = "要選 CSV 檔並填券商名稱"; return; }
+  const fd = new FormData(); fd.append("file", f); fd.append("broker", br); fd.append("symbol", $("#isym").value);
+  $("#impstat").textContent = "匯入中…";
+  try { const r = await api("/api/import_mt5", {method: "POST", body: fd}); $("#impstat").textContent = `已匯入 ${r.rows.toLocaleString()} 根到 ${r.source}/${r.symbol}（${r.first.slice(0, 10)} ～ ${r.last.slice(0, 10)}）`; loadMeta(); }
+  catch (e) { $("#impstat").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+
+// ---------------------------------------------------------------- 比對
+$("#runcmp").onclick = async () => {
+  $("#cmpstat").textContent = "比對中…";
+  try {
+    const r = await api(`/api/compare?symbol=${$("#csym").value}&a=${$("#ca").value}&b=${$("#cb").value}`);
+    $("#cmpstat").textContent = "";
+    const p = el("div", {className: "panel"});
+    if (r.note) { p.innerHTML = `<div class="dimc">${r.note}</div>`; }
+    else {
+      let h = `<div class="grid">` + [["重疊分鐘數", r.overlap.toLocaleString()], ["期間（美東）", `${r.from} ～ ${r.to}`],
+        ["B − A 平均價差", fmt(r.diff_mean, 2)], ["價差標準差", fmt(r.diff_std, 2)], ["價差 95% 分位（絕對值）", fmt(r.diff_p95_abs, 2)],
+        ["1 分鐘報酬相關係數", fmt(r.ret_corr, 4)]].map(([k, v]) => `<div><div class="hint">${k}</div><div>${v}</div></div>`).join("") + `</div>`;
+      if (r.spread_median !== undefined) {
+        h += `<h2 style="margin-top:16px">B 的實際點差（指數點）</h2><div class="grid">` +
+          [["整體中位數", r.spread_median], ["正規盤 RTH", r.spread_rth], ["延長盤 ETH", r.spread_eth]].map(([k, v]) => `<div><div class="hint">${k}</div><div class="gold">${fmt(v, 2)}</div></div>`).join("") + `</div>`;
+        h += `<div class="scroll" style="margin-top:10px"><table><tr><th class="l">美東小時</th>${r.spread_by_hour.map(x => `<th>${x[0]}</th>`).join("")}</tr><tr><td class="l">點差</td>${r.spread_by_hour.map(x => `<td>${fmt(x[1], 2)}</td>`).join("")}</tr></table></div>`;
+        h += `<p class="hint">把 RTH 點差填進回測頁「成本 → 點差」；策略在延長盤進出比較多的話，用整體中位數比較保守。</p>`;
+      }
+      p.innerHTML = h;
+    }
+    $("#cmpout").innerHTML = ""; $("#cmpout").append(p);
+  } catch (e) { $("#cmpstat").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+
+loadMeta().then(loadPresets).catch(e => document.querySelector("main").prepend(el("div", {className: "panel err"}, e.message)));
+</script>
+</body>
+</html>
