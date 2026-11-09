@@ -96,6 +96,21 @@ class Strategy:
             return self.b.wtd_low[self.i]
         return self.b.week_low[max(self.b.week_idx[self.i] - int(n), 0)]
 
+    def trend_ok(self, n, side=1):
+        """趨勢濾網：前一個完整交易日收盤在 n 日均線之上（side=1）或之下（side=-1）。
+        n=0 關閉（永遠通過）；歷史不足 n 天時不通過。只看已收盤的日線，沒有偷看。"""
+        n = int(n)
+        if n <= 0:
+            return True
+        k = self.b.day_idx[self.i] - 1
+        if k < 0:
+            return False
+        ma = B.daily_sma(self.b, n)[k]
+        if ma != ma:
+            return False
+        c = self.b.day_close[k]
+        return c > ma if side > 0 else c < ma
+
     def U(self, x):
         """x 個單位換成價格距離（用進場時凍結的單位）"""
         return float(x) * self.u

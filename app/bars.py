@@ -196,3 +196,12 @@ def swinghigh(b, strength, length):
 
 def swinglow(b, strength, length):
     return _swing(b, strength, length, False)
+
+
+def daily_sma(b, n):
+    """日收盤（交易日，美東 18:00 切換）的 n 日均線，每個交易日一個值；不足 n 天為 NaN。"""
+    n = max(1, int(n))
+    k = ("dsma", n)
+    if k not in b.cache:
+        b.cache[k] = pd.Series(b.day_close).rolling(n, min_periods=n).mean().to_numpy()
+    return b.cache[k]
