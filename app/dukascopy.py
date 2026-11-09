@@ -36,7 +36,9 @@ UA = {
     "Referer": "https://www.dukascopy.com/",
 }
 REC = struct.Struct(">5if")
-WORKERS = int(os.getenv("DUKA_WORKERS", "4"))
+WORKERS = int(os.getenv("DUKA_WORKERS", "2"))
+DELAY = float(os.getenv("DUKA_DELAY", "0.5"))          # 每個請求之間的間隔（秒），降低被限流的機率
+MAX_CONSEC_FAIL = int(os.getenv("DUKA_MAX_FAIL", "12")) # 連續失敗這麼多天就停（多半是被限流，硬跑只會更久）
 DIVISORS = [1000, 100, 10, 1, 10000, 100000]
 
 
@@ -50,7 +52,7 @@ def fetch_raw(code, d, retries=4):
     for k in range(retries):
         try:
             req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=20) as r:
                 data = r.read()
             if not data:
                 return b""
@@ -218,7 +220,13 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
             buf = []
 
     def work(day):
-        return day, to_frame(day, parse(fetch_raw(code, day)), fmt)
+        if stop_flag and stop_flag() or tripped[0]:
+            return day, None
+        time.sleep(DELAY)
+        return day, to_frame(day, parse(fetch_raw(code, day, retries=3)), fmt)
+
+    tripped = [False]
+    consec = 0
 
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         futs = [ex.submit(work, x) for x in todo]
@@ -227,18 +235,29 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
                 for g in futs:
                     g.cancel()
                 break
+            if tripped[0]:
+                for g in futs:
+                    g.cancel()
+                break
             try:
                 day, df = f.result()
+                consec = 0
                 if df is not None and len(df):
                     with lock:
                         buf.append(df)
             except Exception as e:
                 failed.append(str(e))
+                consec += 1
+                if consec >= MAX_CONSEC_FAIL:
+                    tripped[0] = True
             done += 1
             if len(buf) >= 40:
                 flush()
             if progress:
                 progress(done, total)
     flush()
-    log.append(f"處理 {total} 天，寫入 {saved:,} 根 1 分 K" + (f"，失敗 {len(failed)} 天" if failed else ""))
+    log.append(f"處理 {done}／{total} 天，寫入 {saved:,} 根 1 分 K" + (f"，失敗 {len(failed)} 天" if failed else ""))
+    if tripped[0]:
+        log.append(f"連續 {MAX_CONSEC_FAIL} 天下載失敗，已自動停止：多半是 Dukascopy 暫時限流了你的伺服器 IP，"
+                   "建議隔幾個小時再按一次（已抓到的會保留，會從缺的地方接著抓）")
     return {"days": total, "rows": saved, "failed": failed[:20], "log": log, "format": fmt}
