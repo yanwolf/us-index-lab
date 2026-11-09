@@ -11,7 +11,8 @@
 和台指版的差別：
   · 停損停利以「單位」計：單位 = 進場前一根 K 收盤時的 AvgRange(UNIT_N)，或價格的 0.1%（UNIT_MODE=1）
     所以參數是波動倍數，不受指數點位高低影響
-  · 沒有結算日；週末規則改為週五（交易日）美東時間 >= TNw 起市價出場並停止進場
+  · 沒有結算日；週末規則：每週最後一筆報價前 WKX 分鐘起，市價出場並停止進場
+    （直接看資料的休市缺口，任何市場、提早收盤、長假都適用）
   · 成本：每邊 spread/2 + slippage + commission，另計隔夜利息
 """
 import numpy as np
@@ -26,10 +27,10 @@ class Order:
         self.kind, self.action, self.price, self.label = kind, action, price, label
 
 
-COMMON_INPUTS = {"UNIT_N": 100, "UNIT_MODE": 0, "TNw": 1645}
+COMMON_INPUTS = {"UNIT_N": 100, "UNIT_MODE": 0, "WKX": 15}
 COMMON_DOC = {"UNIT_N": "停損停利單位：AvgRange 期數（UNIT_MODE=0）",
               "UNIT_MODE": "單位模式：0 = AvgRange(UNIT_N)、1 = 價格的 0.1%",
-              "TNw": "週五（美東）幾點起出場且不再進場，HHMM"}
+              "WKX": "週末（或長假）休市前幾分鐘出場且不再進場；0 = 抱單過週末"}
 
 
 class Strategy:
@@ -167,16 +168,19 @@ def _valid(action, mp):
 
 
 def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session",
-        start_ts=None, end_ts=None, cache_key=None, collect_trades=True):
+        start_ts=None, end_ts=None, cache_key=None, collect_trades=True, symbol=None):
     """回傳 dict：trades（list）、daily（[(tday_ord, equity_pts, close)]）、bars_in_pos、n_bars"""
     strat = strategy_cls(params)
     minutes = int(minutes or strat.minutes)
-    m = B.minute_frame(minutes_data)
-    b = B.build(m, minutes, align, cache_key=cache_key)
+    m = B.minute_frame(minutes_data, symbol)
+    b = B.build(m, minutes, align, cache_key=cache_key, symbol=symbol)
     strat.b = b
     mo, mh, ml, mc, mts = m["o"], m["h"], m["l"], m["c"], m["ts"]
-    tnw = int(strat.p.get("TNw", 1645))
-    wk_min = (m["tday_wd"] == 4) & (m["hhmm"] >= tnw) & (m["hhmm"] < 1800)
+    wkx = int(strat.p.get("WKX", 15))
+    if wkx > 0:
+        wk_min = m["to_week_end"] < wkx * 60
+    else:
+        wk_min = np.zeros(len(m["ts"]), dtype=bool)
 
     side_cost = costs["spread"] / 2.0 + costs["slippage"] + costs.get("commission", 0.0)
     swap_l = costs.get("swap_long_pct", 0.0) / 100.0 / 360.0
@@ -204,7 +208,7 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
         strat.u = float(strat.u_now)
         strat.entries_today += 1
         cur = {"dir": direction, "entry": price, "entry_ts": int(mts[j]), "label": label,
-               "swap": 0.0, "bars": 0, "entry_i": i}
+               "swap": 0.0, "bars": 0, "entry_i": i, "entry_tday": int(m["tday"][j])}
 
     def close_pos(price, j, label):
         nonlocal cur, realized
@@ -215,13 +219,14 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
         realized += net
         if collect_trades:
             trades.append({"dir": cur["dir"], "entry_ts": cur["entry_ts"], "exit_ts": int(mts[j]),
+                           "entry_tday": cur["entry_tday"], "exit_tday": int(m["tday"][j]),
                            "entry": round(cur["entry"], 2), "exit": round(price, 2),
                            "gross": round(gross, 2), "cost": round(cost, 2), "swap": round(cur["swap"], 2),
                            "net": round(net, 2), "ret_pct": float(net / cur["entry"] * 100.0),
                            "mfe": round(strat.maxprofit, 2), "bars": cur["bars"],
                            "in": cur["label"], "out": label})
         else:
-            trades.append((cur["entry_ts"], net, net / cur["entry"] * 100.0, cur["dir"]))
+            trades.append((cur["entry_ts"], net, net / cur["entry"] * 100.0, cur["dir"], cur["entry_tday"]))
         strat.mp = 0
         strat.entryprice = None
         strat.maxprofit = 0.0

@@ -49,7 +49,9 @@ def index():
 @app.get("/api/meta")
 def meta():
     return {
-        "instruments": {k: {"name": v["name"], "duka": v["duka"], "costs": cost_defaults(k)} for k, v in INSTRUMENTS.items()},
+        "instruments": {k: {"name": v["name"], "duka": v["duka"], "tz": v["tz"], "rth": v["rth"],
+                            "rth_name": v["rth_name"], "eth_name": v["eth_name"], "costs": cost_defaults(k)}
+                        for k, v in INSTRUMENTS.items()},
         "strategies": {k: {"desc": c.desc, "minutes": c.minutes, "inputs": c.all_inputs(), "doc": c.all_doc()}
                        for k, c in REGISTRY.items()},
         "objectives": optimize.OBJECTIVES,

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from . import store
+from .instruments import inst, hm2min
 
 
 def import_csv(raw_bytes, broker, symbol):
@@ -33,9 +34,10 @@ def compare(symbol, source_a, source_b):
         return {"overlap": int(len(j)), "note": "重疊的分鐘太少，無法比較（確認兩邊時間都是 UTC、期間有重疊）"}
     diff = j["cb"] - j["ca"]
     ra, rb = np.diff(np.log(j["ca"].to_numpy())), np.diff(np.log(j["cb"].to_numpy()))
-    et = pd.to_datetime(j["ts"], unit="s", utc=True).dt.tz_convert("America/New_York")
+    I = inst(symbol)
+    et = pd.to_datetime(j["ts"], unit="s", utc=True).dt.tz_convert(I["tz"])
     hm = et.dt.hour * 100 + et.dt.minute
-    rth = (hm >= 930) & (hm < 1600)
+    rth = (hm >= I["rth"][0]) & (hm < I["rth"][1])
     out = {"overlap": int(len(j)),
            "from": str(et.iloc[0])[:16], "to": str(et.iloc[-1])[:16],
            "diff_mean": round(float(diff.mean()), 3), "diff_std": round(float(diff.std()), 3),

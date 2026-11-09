@@ -100,7 +100,7 @@ def buy_hold(daily):
 def yearly(trades):
     out = {}
     for t in trades:
-        y = datetime.fromtimestamp(t["exit_ts"] + 2 * 3600 - 6 * 3600, timezone.utc).year   # 約略美東日期
+        y = (EPOCH + timedelta(days=int(t["exit_tday"]))).year     # 出場交易日的年份
         r = out.setdefault(y, {"year": y, "trades": 0, "net_pts": 0.0, "ret_pct": 0.0, "wins": 0})
         r["trades"] += 1
         r["net_pts"] += t["net"]

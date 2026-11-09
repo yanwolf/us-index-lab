@@ -34,6 +34,8 @@ import pandas as pd
 CANDIDATES = {
     "US500": ["US500", "US500.cash", "US500Cash", "SPX500", "SP500", "US500m", "US500.a", "SPX500.r", "US500-F", "USA500"],
     "NAS100": ["NAS100", "USTEC", "US100", "NAS100.cash", "US100.cash", "USTECH", "NDX100", "NAS100m", "USTEC.a", "NAS100.r", "USTEC-F"],
+    "JP225": ["JP225", "JPN225", "JP225.cash", "JP225Cash", "NIKKEI", "N225", "J225", "JP225m", "JPN225.a", "JP225-F"],
+    "HK50": ["HK50", "HK50.cash", "HK50Cash", "HSI", "HK50m", "HKG50", "HK50.a", "HK50-F", "HK33"],
 }
 SWAP_MODES = {0: "停用", 1: "點數", 2: "基礎貨幣", 3: "保證金貨幣", 4: "存款貨幣", 5: "年化利率（目前價）",
               6: "年化利率（開倉價）", 7: "重開倉（收盤價）", 8: "重開倉（買價）"}
@@ -47,12 +49,15 @@ def find_symbol(key, override=None):
         if c in names:
             return c
     # 模糊比對
-    pats = {"US500": ("500",), "NAS100": ("NAS", "TEC", "100")}[key]
     for n in sorted(names):
         u = n.upper()
         if key == "US500" and ("500" in u and ("US" in u or "SP" in u)):
             return n
         if key == "NAS100" and (("NAS" in u or "USTEC" in u or "US100" in u or "NDX" in u)):
+            return n
+        if key == "JP225" and ("225" in u or "NIKKEI" in u):
+            return n
+        if key == "HK50" and (u.startswith("HK") or "HSI" in u or "HANG" in u):
             return n
     return None
 
@@ -119,6 +124,8 @@ def main():
     ap.add_argument("--years", type=float, default=4, help="最多往回撈幾年（預設 4）")
     ap.add_argument("--us500", default=None, help="手動指定標普商品代碼")
     ap.add_argument("--nas100", default=None, help="手動指定那指商品代碼")
+    ap.add_argument("--jp225", default=None, help="手動指定日經商品代碼")
+    ap.add_argument("--hk50", default=None, help="手動指定恆指商品代碼")
     ap.add_argument("--server-tz", default="auto", help="auto / nyclose / fixed:+2 之類")
     ap.add_argument("--out", default=".", help="輸出資料夾")
     a = ap.parse_args()
@@ -133,9 +140,9 @@ def main():
     report = {"broker": a.broker, "company": ti.company, "server": ai.server if ai else None,
               "maxbars": ti.maxbars, "probed_at": datetime.now(timezone.utc).isoformat()[:19], "symbols": {}}
 
-    for key, override in (("US500", a.us500), ("NAS100", a.nas100)):
+    for key, override in (("US500", a.us500), ("NAS100", a.nas100), ("JP225", a.jp225), ("HK50", a.hk50)):
         sym = find_symbol(key, override)
-        print(f"\n[{key}] 商品代碼：{sym or '找不到（用 --us500 / --nas100 指定）'}")
+        print(f"\n[{key}] 商品代碼：{sym or '找不到（用 --us500 / --nas100 / --jp225 / --hk50 指定）'}")
         if not sym:
             continue
         mt5.symbol_select(sym, True)

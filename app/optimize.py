@@ -48,14 +48,9 @@ def combos(grid):
     return keys, vals, total
 
 
-def _tday_of(ts):
-    """UTC 秒 → 交易日序數。美東 18:00 切換；17:00–18:00 休市，所以 UTC+2h 在冬夏令都落在正確的日子。"""
-    return (int(ts) + 2 * 3600) // 86400
-
-
 def segment(trades, daily, a, b):
     """取交易日 [a, b) 的交易與每日權益（權益以區段起點歸零）。"""
-    tr = [t for t in trades if a <= _tday_of(t[0]) < b]
+    tr = [t for t in trades if a <= t[4] < b]     # t[4] = 進場交易日
     base = 0.0
     d = []
     for x in daily:

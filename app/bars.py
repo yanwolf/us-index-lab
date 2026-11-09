@@ -1,19 +1,19 @@
 """從 1 分 K 組出 N 分 K、交易日、交易時段、週，並快取指標陣列。
 
-時間規則見 instruments.py。K 棒切法（align）：
-  session（預設，MultiCharts 慣例）：每個時段開盤重新起算，RTH 09:30 開盤是新 K 的起點
-  clock：從交易日 18:00 起整點切，09:30 會落在 K 棒中間
+時間規則見 instruments.py（每個商品用自己交易所的當地時間）。K 棒切法（align）：
+  session（預設，MultiCharts 慣例）：每個時段開盤重新起算，主時段開盤是新 K 的起點
+  clock：從交易日切換點起整點切
 K 棒標籤用「結束時間」（MC 慣例）。
 
 closeD / closeS / highW 的對照：
-  交易日   18:00 切換（週日晚上那段算週一），CloseD(1) = 上一個完整交易日收盤
-  時段     RTH 09:30–16:00、ETH 16:00–翌日 09:30（類比台指日盤／夜盤），CloseS(1) = 上一個完整時段收盤
+  交易日   day_roll 切換（例如美股 18:00、週日晚上那段算週一），CloseD(1) = 上一個完整交易日收盤
+  時段     主時段 ↔ 延長時段交替（類比台指日盤／夜盤），CloseS(1) = 上一個完整時段收盤
   週       以交易日的 ISO 週分組，HighW(0) = 本週到目前為止的最高
 """
 import numpy as np
 import pandas as pd
 
-from .instruments import TZ
+from .instruments import hm2min, inst as get_inst
 
 _bars_cache = {}
 
@@ -22,38 +22,56 @@ class Bars:
     pass
 
 
-def minute_frame(m):
-    """1 分 K 陣列 → 加上美東時間欄位（快取在 dict 裡，同一份資料只算一次）。"""
+WEEK_GAP = 40 * 3600       # 兩分鐘之間超過 40 小時視為週末（或長假）休市
+
+
+def minute_frame(m, symbol=None):
+    """1 分 K 陣列 → 加上當地時間欄位（快取在 dict 裡，同一份資料只算一次）。"""
     if "_et" in m:
         return m
-    et = pd.to_datetime(m["ts"], unit="s", utc=True).tz_convert(TZ)
+    I = get_inst(symbol)
+    roll = hm2min(I["day_roll"])
+    r0, r1 = hm2min(I["rth"][0]), hm2min(I["rth"][1])
+    e0 = hm2min(I.get("eth_start", I["rth"][1]))
+    et = pd.to_datetime(m["ts"], unit="s", utc=True).tz_convert(I["tz"])
     hhmm = (et.hour * 100 + et.minute).to_numpy()
     emin = (et.hour * 60 + et.minute).to_numpy()
     edate = et.normalize().tz_localize(None)
-    # 交易日：18:00 以後歸隔天
-    tday = (et + pd.Timedelta(hours=6)).normalize().tz_localize(None)
+    # 交易日：day_roll 之後歸隔天
+    tday = (et + pd.Timedelta(minutes=(1440 - roll) % 1440)).normalize().tz_localize(None)
     tday_ord = (tday.to_numpy().astype("datetime64[D]").astype("int64"))
+    # 落在週六、週日的交易日順延到週一（週五夜盤歸下週一，期交所／大阪交易所慣例）
+    wd0 = (tday_ord + 3) % 7
+    tday_ord = tday_ord + np.where(wd0 == 5, 2, np.where(wd0 == 6, 1, 0))
     edate_ord = edate.to_numpy().astype("datetime64[D]").astype("int64")
-    is_rth = (emin >= 570) & (emin < 960)
-    ses_date = np.where(emin >= 570, edate_ord, edate_ord - 1)
+    is_rth = (emin >= r0) & (emin < r1)
+    ses_date = np.where(emin >= r0, edate_ord, edate_ord - 1)
     ses_key = ses_date * 2 + np.where(is_rth, 0, 1)
-    # 時段開始的「分鐘時鐘」：RTH 從 09:30、ETH 從 16:00 起算（跨休市照實際時鐘差）
-    ses_start_min = np.where(is_rth, 570, 960)
-    mins_since = np.where(emin >= ses_start_min, emin - ses_start_min, emin + 1440 - 960)
+    # 時段開始的「分鐘時鐘」：主時段從 r0、延長時段從 e0（夜盤開盤）起算（跨午夜照實際時鐘差）
+    mins_since = np.where(is_rth, emin - r0, (emin - e0) % 1440)
+    # 每週最後一分鐘（下一分鐘在 40 小時以後，或資料結尾）
+    ts = m["ts"]
+    gap_next = np.concatenate([np.diff(ts), [WEEK_GAP + 1]])
+    week_last = gap_next > WEEK_GAP
+    # 每一分鐘距離「本週最後一分鐘」還有幾秒
+    idx_last = np.flatnonzero(week_last)
+    nxt = idx_last[np.searchsorted(idx_last, np.arange(len(ts)))]
     m["_et"] = True
     m["hhmm"] = hhmm
     m["tday"] = tday_ord
     m["tday_wd"] = ((tday_ord + 3) % 7)          # 1970-01-01 是週四 → 0=週一 … 4=週五
     m["ses_key"] = ses_key
     m["ses_mins"] = mins_since
-    m["day_mins"] = (emin - 1080) % 1440          # 交易日內第幾分鐘（18:00 = 0）
+    m["day_mins"] = (emin - roll) % 1440          # 交易日內第幾分鐘（切換點 = 0）
+    m["to_week_end"] = ts[nxt] - ts               # 秒
+    m["tz"] = I["tz"]
     return m
 
 
-def build(m, minutes, align="session", cache_key=None):
+def build(m, minutes, align="session", cache_key=None, symbol=None):
     if cache_key is not None and (cache_key, minutes, align) in _bars_cache:
         return _bars_cache[(cache_key, minutes, align)]
-    m = minute_frame(m)
+    m = minute_frame(m, symbol)
     n = len(m["ts"])
     if align == "clock":
         slot = m["day_mins"] // minutes

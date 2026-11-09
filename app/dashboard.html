@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>美股指數回測室</title>
+<title>指數回測室</title>
 <style>
   :root{
     --bg:#12161c; --panel:#1a2029; --panel2:#212834; --line:#2c3543; --ink:#e6e9ee; --dim:#8b95a5;
@@ -68,8 +68,8 @@
 </head>
 <body>
 <header>
-  <h1>美股指數回測室</h1>
-  <span class="sub">標普 500／那斯達克 100 CFD · 台指策略移植 · 時間皆為美東</span>
+  <h1>指數回測室</h1>
+  <span class="sub">指數 CFD 台指策略移植　時間皆為各商品交易所當地時間</span>
 </header>
 <nav id="nav">
   <button data-t="bt" class="on">回測</button>
@@ -180,7 +180,7 @@
 <section id="cmp">
   <div class="panel">
     <h2>兩個資料來源對照</h2>
-    <p class="hint">用重疊期間逐分鐘比較收盤價差與報酬相關性。B 若是 MT5 匯入的資料，會一併算出實際點差（RTH／ETH／每小時中位數），拿來校準回測成本。</p>
+    <p class="hint">用重疊期間逐分鐘比較收盤價差與報酬相關性。B 若是 MT5 匯入的資料，會一併算出實際點差（主時段／延長時段／每小時中位數），拿來校準回測成本。</p>
     <div class="grid" style="margin-top:8px">
       <label>商品<select id="csym"></select></label>
       <label>A<select id="ca"></select></label>
@@ -194,6 +194,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
+const tzLabel = tz => ({"America/New_York": "美東", "Asia/Tokyo": "東京", "Asia/Hong_Kong": "香港"}[tz] || tz);
 const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const el = (t, a = {}, h = "") => { const e = document.createElement(t); Object.assign(e, a); if (h) e.innerHTML = h; return e; };
 let META = null, PRESETS = [];
@@ -327,7 +328,7 @@ function renderResult(r) {
   const p1 = el("div", {className: "panel"});
   const srcName = r.source === "duka" ? "Dukascopy" : r.source;
   p1.append(el("div", {className: "rtitle"}, `<span class="rs">${esc(r.strategy)}</span><span class="rm">${esc(r.symbol)}　${r.minutes} 分 K　${esc(srcName)}</span>`));
-  p1.append(el("p", {className: "hint", style: "margin:2px 0 10px"}, esc((r.range || []).join(" ～ ")) + "　" +
+  p1.append(el("p", {className: "hint", style: "margin:2px 0 10px"}, esc((r.range || []).join(" ～ ")) + `（${tzLabel(r.tz)}時間）　` +
     Object.entries(r.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ")));
   p1.append(el("div", {className: "verdict"}, verdict(s, b)));
   const rows = [
@@ -370,7 +371,7 @@ function renderResult(r) {
 
   const p4 = el("div", {className: "panel"});
   p4.append(el("h2", {}, `交易明細（${r.trades.length} 筆，最新在上）`));
-  let tt = `<tr><th class="l">進場</th><th class="l">出場</th><th>方向</th><th>進場價</th><th>出場價</th><th>淨點數</th><th>報酬%</th><th>最大浮盈</th><th>K 數</th><th class="l">進場</th><th class="l">出場原因</th></tr>`;
+  let tt = `<tr><th class="l">進場（${tzLabel(r.tz)}）</th><th class="l">出場</th><th>方向</th><th>進場價</th><th>出場價</th><th>淨點數</th><th>報酬%</th><th>最大浮盈</th><th>K 數</th><th class="l">進場</th><th class="l">出場原因</th></tr>`;
   r.trades.slice().reverse().slice(0, 500).forEach(x => tt += `<tr><td class="l">${x.entry_time}</td><td class="l">${x.exit_time}</td><td>${x.dir > 0 ? '<span class="up">多</span>' : '<span class="down">空</span>'}</td><td>${fmt(x.entry, 2)}</td><td>${fmt(x.exit, 2)}</td><td>${sgn(x.net, 2)}</td><td>${sgn(x.ret_pct, 2)}</td><td>${fmt(x.mfe, 1)}</td><td>${x.bars}</td><td class="l">${x.in}</td><td class="l">${x.out}</td></tr>`);
   p4.append(el("div", {className: "scroll"}, `<table>${tt}</table>`));
   if (r.trades.length > 500) p4.append(el("p", {className: "hint"}, "只列最近 500 筆"));
@@ -656,18 +657,19 @@ $("#runcmp").onclick = async () => {
   $("#cmpstat").textContent = "比對中…";
   try {
     const r = await api(`/api/compare?symbol=${$("#csym").value}&a=${$("#ca").value}&b=${$("#cb").value}`);
+    const I = META.instruments[$("#csym").value], tzName = tzLabel(I.tz);
     $("#cmpstat").textContent = "";
     const p = el("div", {className: "panel"});
     if (r.note) { p.innerHTML = `<div class="dimc">${r.note}</div>`; }
     else {
-      let h = `<div class="grid">` + [["重疊分鐘數", r.overlap.toLocaleString()], ["期間（美東）", `${r.from} ～ ${r.to}`],
+      let h = `<div class="grid">` + [["重疊分鐘數", r.overlap.toLocaleString()], [`期間（${tzName}）`, `${r.from} ～ ${r.to}`],
         ["B − A 平均價差", fmt(r.diff_mean, 2)], ["價差標準差", fmt(r.diff_std, 2)], ["價差 95% 分位（絕對值）", fmt(r.diff_p95_abs, 2)],
         ["1 分鐘報酬相關係數", fmt(r.ret_corr, 4)]].map(([k, v]) => `<div><div class="hint">${k}</div><div>${v}</div></div>`).join("") + `</div>`;
       if (r.spread_median !== undefined) {
         h += `<h2 style="margin-top:16px">B 的實際點差（指數點）</h2><div class="grid">` +
-          [["整體中位數", r.spread_median], ["正規盤 RTH", r.spread_rth], ["延長盤 ETH", r.spread_eth]].map(([k, v]) => `<div><div class="hint">${k}</div><div class="gold">${fmt(v, 2)}</div></div>`).join("") + `</div>`;
-        h += `<div class="scroll" style="margin-top:10px"><table><tr><th class="l">美東小時</th>${r.spread_by_hour.map(x => `<th>${x[0]}</th>`).join("")}</tr><tr><td class="l">點差</td>${r.spread_by_hour.map(x => `<td>${fmt(x[1], 2)}</td>`).join("")}</tr></table></div>`;
-        h += `<p class="hint">把 RTH 點差填進回測頁「成本 → 點差」；策略在延長盤進出比較多的話，用整體中位數比較保守。</p>`;
+          [["整體中位數", r.spread_median], [I.rth_name, r.spread_rth], [I.eth_name, r.spread_eth]].map(([k, v]) => `<div><div class="hint">${k}</div><div class="gold">${fmt(v, 2)}</div></div>`).join("") + `</div>`;
+        h += `<div class="scroll" style="margin-top:10px"><table><tr><th class="l">${tzName}小時</th>${r.spread_by_hour.map(x => `<th>${x[0]}</th>`).join("")}</tr><tr><td class="l">點差</td>${r.spread_by_hour.map(x => `<td>${fmt(x[1], 2)}</td>`).join("")}</tr></table></div>`;
+        h += `<p class="hint">把${I.rth_name}點差填進回測頁「成本 → 點差」；策略在${I.eth_name}進出比較多的話，用整體中位數比較保守。</p>`;
       }
       p.innerHTML = h;
     }

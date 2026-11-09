@@ -47,3 +47,34 @@ def test_bars():
 
 if __name__ == "__main__":
     test_bars(); test_all(); print("OK")
+
+
+def test_jp():
+    from synth import make_jp
+    import pandas as pd
+    m = make_jp(days=300)
+    b = B.build(B.minute_frame(m, "JP225"), 60, symbol="JP225")
+    lt = pd.to_datetime(b.ts_start, unit="s", utc=True).tz_convert("Asia/Tokyo")
+    starts = sorted(set((lt.hour * 100 + lt.minute)))
+    print("JP 60 分 K 起點（東京）:", starts)
+    assert 845 in starts and 1700 in starts and 1545 not in starts
+    # 交易日：週五夜盤（週五 17:00 起）要歸到下週一
+    fri_night = np.asarray((lt.dayofweek == 4) & (lt.hour >= 17))
+    wd = (b.tday[fri_night] + 3) % 7
+    assert (wd == 0).all(), "週五夜盤應歸週一"
+    costs = cost_defaults("JP225")
+    for name, cls in REGISTRY.items():
+        r = engine.run(cls, {}, m, costs, cache_key=("synth", "JP225"), symbol="JP225")
+        for t in r["trades"]:
+            et_in = pd.Timestamp(t["entry_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
+            et_out = pd.Timestamp(t["exit_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
+            assert (et_out - et_in).total_seconds() < 4 * 86400, (name, t)
+        wk = [t for t in r["trades"] if t["out"] == "週末出場"]
+        if wk:
+            ot = pd.Timestamp(wk[0]["exit_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
+            assert ot.dayofweek == 5 and ot.hour == 5 and ot.minute == 45, ot
+        print(f"JP {name:14s} trades={len(r['trades'])} 週末出場={len(wk)}")
+
+
+if __name__ == "__main__":
+    test_jp()
