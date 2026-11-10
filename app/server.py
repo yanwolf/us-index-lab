@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import backtest, dukascopy, jobs, mt5import, optimize, store
+from . import backtest, dukascopy, jobs, mt5import, optimize, portfolio, store
 from .instruments import INSTRUMENTS, cost_defaults
 from .strategies import REGISTRY
 
@@ -120,6 +120,17 @@ async def run_backtest(body: dict):
         r["elapsed"] = round(time.time() - t0, 2)
         return r
     except FileNotFoundError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/portfolio")
+async def run_portfolio(body: dict):
+    try:
+        t0 = time.time()
+        r = await run_in_threadpool(portfolio.run, body.get("legs") or [], body.get("start"), body.get("end"))
+        r["elapsed"] = round(time.time() - t0, 2)
+        return r
+    except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(400, str(e))
 
 

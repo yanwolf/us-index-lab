@@ -75,6 +75,7 @@
   <button data-t="bt" class="on">回測</button>
   <button data-t="opt">最佳化</button>
   <button data-t="data">資料</button>
+  <button data-t="pf">組合</button>
   <button data-t="cmp">資料比對</button>
 </nav>
 <main>
@@ -177,6 +178,27 @@
 </section>
 
 <!-- ============ 比對 ============ -->
+<section id="pf">
+  <div class="panel">
+    <h2>策略組合</h2>
+    <p class="hint">在回測頁跑完後按「加入組合」把那一組（商品、策略、參數、成本）放進來。各腳依權重分配資金，以每日 % 損益合併，看分散後的總回撤。不同幣別都用 % 計，忽略匯率。</p>
+    <div class="scroll" style="margin-top:10px"><table id="pflegs"></table></div>
+    <div class="grid" style="margin-top:12px">
+      <label>開始（空白 = 自動取各腳資料的共同區間）<input id="pfstart" type="date"></label>
+      <label>結束<input id="pfend" type="date"></label>
+    </div>
+    <h2 style="margin-top:14px">上線門檻</h2>
+    <div class="grid">
+      <label>PF 至少<input id="thpf" type="number" step="0.01" value="1.08"></label>
+      <label>交易數至少<input id="thtr" type="number" value="100"></label>
+      <label>每年報酬／回撤至少<input id="thrm" type="number" step="0.01" value="0.46"></label>
+    </div>
+    <p class="hint">預設門檻取自台指 TMFF（2017–2026，PF 1.12、每年淨利／回撤約 0.46）：新組合至少要跟正在台指上跑的差不多。</p>
+    <div class="row" style="margin-top:12px"><button class="act" id="runpf">執行組合</button><button class="sec" id="pfclr">清空組合</button><span id="pfstat" class="dimc"></span></div>
+  </div>
+  <div id="pfout"></div>
+</section>
+
 <section id="cmp">
   <div class="panel">
     <h2>兩個資料來源對照</h2>
@@ -331,11 +353,15 @@ function renderResult(r) {
   p1.append(el("p", {className: "hint", style: "margin:2px 0 10px"}, esc((r.range || []).join(" ～ ")) + `（${tzLabel(r.tz)}時間）　` +
     Object.entries(r.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ")));
   p1.append(el("div", {className: "verdict"}, verdict(s, b)));
+  const addBtn = el("button", {className: "sec", textContent: "加入組合", style: "margin-bottom:12px"});
+  addBtn.onclick = () => { addLeg(r); addBtn.textContent = "已加入組合"; addBtn.disabled = true; };
+  p1.append(addBtn);
   const rows = [
     ["累積報酬（1 倍名目）", sgn(s.ret_pct, 2, "%"), sgn(b.ret_pct, 2, "%")],
     ["年化報酬", sgn(s.ann_pct, 2, "%"), sgn(b.ann_pct, 2, "%")],
     ["最大回撤", fmt(s.mdd_pct, 2) + "%", fmt(b.mdd_pct, 2) + "%"],
     ["報酬／回撤", fmt(s.mdd_pct ? s.ret_pct / s.mdd_pct : 0, 2), fmt(b.ret_mdd, 2)],
+    ["每年報酬／回撤", fmt(s.ann_mdd, 2), fmt(b.mdd_pct ? b.ann_pct / b.mdd_pct : 0, 2)],
     ["Sharpe", fmt(s.sharpe, 2), fmt(b.sharpe, 2)],
     ["持倉時間比例", fmt(s.exposure_pct, 1) + "%", "100%"],
   ];
@@ -442,6 +468,121 @@ function renderHist() {
 }
 $("#histclr").onclick = () => { if (confirm("清除所有回測紀錄？")) { HIST = []; localStorage.removeItem("bt_hist"); renderHist(); } };
 renderHist();
+
+// ---------------------------------------------------------------- 組合
+let PF = [];
+try { PF = JSON.parse(localStorage.getItem("pf_legs") || "[]"); } catch (e) { PF = []; }
+const savePF = () => { try { localStorage.setItem("pf_legs", JSON.stringify(PF)); } catch (e) {} };
+const LEG_COLORS = ["#7fb3ff", "#5cc8c0", "#b49cff", "#c9a96e", "#8b95a5", "#e0a83a", "#9ad06a", "#d48fd0"];
+function addLeg(r) {
+  PF.push({source: r.source, symbol: r.symbol, strategy: r.strategy, minutes: r.minutes, align: r.align,
+           params: r.params, costs: r.costs, weight: 1});
+  savePF(); renderLegs();
+}
+function renderLegs() {
+  const t = $("#pflegs");
+  if (!PF.length) { t.innerHTML = `<tr><td class="l dimc">還沒有任何一腳。到回測頁跑完一組後按「加入組合」。</td></tr>`; return; }
+  let h = `<tr><th class="l">商品</th><th class="l">策略</th><th>K</th><th class="l">參數</th><th>權重</th><th></th></tr>`;
+  PF.forEach((x, i) => h += `<tr><td class="l">${esc(x.symbol)}</td><td class="l gold">${esc(x.strategy)}</td><td>${x.minutes}</td>
+    <td class="l hint" style="white-space:normal;min-width:230px;max-width:360px">${Object.entries(x.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" ")}</td>
+    <td><input type="number" min="0" step="0.5" value="${x.weight}" data-i="${i}" style="width:70px"></td>
+    <td><button class="danger" data-d="${i}">移除</button></td></tr>`);
+  t.innerHTML = h;
+  t.querySelectorAll("input[data-i]").forEach(inp => inp.onchange = () => { PF[inp.dataset.i].weight = Number(inp.value); savePF(); });
+  t.querySelectorAll("button[data-d]").forEach(b => b.onclick = () => { PF.splice(Number(b.dataset.d), 1); savePF(); renderLegs(); });
+}
+$("#pfclr").onclick = () => { if (confirm("清空組合裡的所有策略？")) { PF = []; savePF(); renderLegs(); $("#pfout").innerHTML = ""; } };
+$("#runpf").onclick = async () => {
+  $("#runpf").disabled = true; $("#pfstat").textContent = "計算中，每一腳都要回測一次…";
+  try {
+    const r = await api("/api/portfolio", {method: "POST", body: {legs: PF, start: $("#pfstart").value || null, end: $("#pfend").value || null}});
+    $("#pfstat").textContent = `完成，${r.elapsed} 秒`;
+    renderPF(r);
+  } catch (e) { $("#pfstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  $("#runpf").disabled = false;
+};
+function renderPF(r) {
+  const out = $("#pfout"); out.innerHTML = "";
+  const th = {pf: Number($("#thpf").value), tr: Number($("#thtr").value), rm: Number($("#thrm").value)};
+  const c = r.combo;
+  const p1 = el("div", {className: "panel"});
+  const div = r.avg_leg_mdd > 0 ? (1 - c.mdd_pct / r.avg_leg_mdd) * 100 : 0;
+  p1.append(el("div", {className: "verdict"}, `組合每年報酬／回撤 <b>${fmt(c.ann_mdd, 2)}</b>（門檻 ${fmt(th.rm, 2)}）。` +
+    `組合最大回撤 ${fmt(c.mdd_pct, 2)}%，各腳回撤加權平均 ${fmt(r.avg_leg_mdd, 2)}%，分散後回撤${div >= 0 ? "少了" : "多了"} ${fmt(Math.abs(div), 0)}%。`));
+  const vs = el("div", {className: "vs"});
+  vs.append(el("div", {className: "h"}, `期間 ${esc(r.range.join(" ～ "))}`), el("div", {className: "h v"}, "組合"), el("div", {className: "h v"}, ""));
+  [["累積報酬", sgn(c.ret_pct, 2, "%")], ["年化報酬", sgn(c.ann_pct, 2, "%")], ["最大回撤", fmt(c.mdd_pct, 2) + "%"],
+   ["每年報酬／回撤", fmt(c.ann_mdd, 2)], ["Sharpe", fmt(c.sharpe, 2)]]
+    .forEach(([k, v]) => vs.append(el("div", {className: "k"}, k), el("div", {className: "v"}, v), el("div", {className: "v"}, "")));
+  p1.append(vs);
+  out.append(p1);
+
+  const p2 = el("div", {className: "panel"});
+  p2.append(el("h2", {}, "累積報酬 %"));
+  p2.append(el("div", {className: "legend", style: "flex-wrap:wrap"}, `<span><i style="background:var(--gold);height:4px"></i>組合</span>` +
+    r.names.map((n, i) => `<span><i style="background:${LEG_COLORS[i % LEG_COLORS.length]}"></i>${esc(n)}</span>`).join("")));
+  const cv = el("canvas"); p2.append(cv);
+  const tip = el("div", {className: "hint", style: "min-height:18px"}); p2.append(tip);
+  out.append(p2);
+  drawMulti(cv, r.series, tip, r.names);
+
+  const p3 = el("div", {className: "panel"});
+  p3.append(el("h2", {}, "各腳對照門檻"));
+  let t = `<tr><th class="l">策略</th><th>權重</th><th>交易</th><th>PF</th><th>年化%</th><th>回撤%</th><th>每年報酬/回撤</th><th class="l">門檻</th></tr>`;
+  r.legs.forEach((L, i) => {
+    const s = L.summary, st = L.stats;
+    const fails = [];
+    if (s.pf < th.pf) fails.push("PF"); if (s.trades < th.tr) fails.push("交易數"); if (st.ann_mdd < th.rm) fails.push("報酬／回撤");
+    t += `<tr><td class="l"><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${LEG_COLORS[i % LEG_COLORS.length]};margin-right:6px"></i>${esc(L.name)}</td>
+      <td>${L.weight}</td><td>${s.trades}</td><td>${fmt(s.pf, 2)}</td><td>${sgn(st.ann_pct, 2)}</td><td>${fmt(st.mdd_pct, 2)}</td><td>${fmt(st.ann_mdd, 2)}</td>
+      <td class="l">${fails.length ? `<span class="tag" style="color:var(--warn)">未過：${fails.join("、")}</span>` : `<span class="tag ok">通過</span>`}</td></tr>`;
+  });
+  p3.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  out.append(p3);
+
+  if (r.corr) {
+    const p4 = el("div", {className: "panel"});
+    p4.append(el("h2", {}, "每日報酬相關係數"));
+    p4.append(el("p", {className: "hint"}, "越接近 0 分散效果越好；接近 1 代表兩腳幾乎同漲同跌，放在一起等於加碼。"));
+    let h = `<tr><th></th>${r.names.map((n, i) => `<th>${i + 1}</th>`).join("")}</tr>`;
+    r.corr.forEach((row, i) => h += `<tr><td class="l">${i + 1}. ${esc(r.names[i])}</td>${row.map((v, j) => `<td class="${i !== j && v >= 0.5 ? "gold" : ""}">${i === j ? "–" : fmt(v, 2)}</td>`).join("")}</tr>`);
+    p4.append(el("div", {className: "scroll"}, `<table>${h}</table>`));
+    out.append(p4);
+  }
+
+  const p5 = el("div", {className: "panel"});
+  p5.append(el("h2", {}, "逐年報酬 %"));
+  let y = `<tr><th class="l">年</th><th>組合</th>${r.names.map((n, i) => `<th>${i + 1}</th>`).join("")}</tr>`;
+  r.yearly.forEach(row => y += `<tr><td class="l">${row.year}</td><td><b>${sgn(row.combo, 2)}</b></td>${row.legs.map(v => `<td>${sgn(v, 2)}</td>`).join("")}</tr>`);
+  p5.append(el("div", {className: "scroll"}, `<table>${y}</table>`));
+  p5.append(el("p", {className: "hint"}, "欄位數字對應上方相關係數表的編號。"));
+  out.append(p5);
+}
+function drawMulti(cv, S, tip, names) {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const c = cv.getContext("2d"); c.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const padL = 44, padR = 8, padT = 8, padB = 22, n = S.dates.length;
+  const all = S.combo.concat(...S.legs, [0]);
+  let lo = Math.min(...all), hi = Math.max(...all); if (hi - lo < 1) { hi += 1; lo -= 1; }
+  const X = i => padL + (W - padL - padR) * i / Math.max(1, n - 1);
+  const Y = v => padT + (H - padT - padB) * (hi - v) / (hi - lo);
+  c.font = "11px sans-serif"; c.fillStyle = css.getPropertyValue("--dim"); c.strokeStyle = css.getPropertyValue("--line"); c.lineWidth = 1;
+  const step = niceStep((hi - lo) / 5);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) { c.beginPath(); c.moveTo(padL, Y(v)); c.lineTo(W - padR, Y(v)); c.stroke(); c.fillText(v.toFixed(step < 1 ? 1 : 0) + "%", 2, Y(v) + 4); }
+  c.fillText(S.dates[0], padL, H - 6); const lt = S.dates[n - 1]; c.fillText(lt, W - padR - c.measureText(lt).width, H - 6);
+  const line = (vals, col, w) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); vals.forEach((v, i) => i ? c.lineTo(X(i), Y(v)) : c.moveTo(X(i), Y(v))); c.stroke(); };
+  S.legs.forEach((vals, i) => line(vals, LEG_COLORS[i % LEG_COLORS.length], 1.1));
+  line(S.combo, css.getPropertyValue("--gold"), 2.4);
+  const show = ev => {
+    const r = cv.getBoundingClientRect(); const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    const i = Math.max(0, Math.min(n - 1, Math.round((x - padL) / (W - padL - padR) * (n - 1))));
+    tip.innerHTML = `${S.dates[i]}　組合 ${sgn(S.combo[i], 2, "%")}　` + S.legs.map((v, k) => `${k + 1}: ${sgn(v[i], 1, "%")}`).join("　");
+  };
+  cv.onpointermove = show; cv.ontouchmove = show;
+}
+renderLegs();
 
 // ---------------------------------------------------------------- 參數存檔
 async function loadPresets() {

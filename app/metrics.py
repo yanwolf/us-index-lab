@@ -77,6 +77,7 @@ def summarize(trades, daily, bars_in_pos=0, n_bars=0):
         "short_pts": round(float(nets[dirs < 0].sum()), 1) if n else 0.0,
         "years": round(years, 2),
     }
+    out["ann_mdd"] = round(out["ann_pct"] / out["mdd_pct"], 2) if out["mdd_pct"] > 0 else (99.0 if out["ann_pct"] > 0 else 0.0)
     return out
 
 
