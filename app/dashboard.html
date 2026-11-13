@@ -451,10 +451,13 @@ function addHist(r) {
 }
 function renderHist() {
   $("#histp").style.display = HIST.length ? "" : "none";
-  let h = `<tr><th class="l">策略</th><th class="l">商品</th><th>K</th><th>交易</th><th>報酬%</th><th>回撤%</th><th>報酬/回撤</th><th>PF</th><th>持有 報酬/回撤</th><th class="l">時間</th></tr>`;
+  let h = `<tr><th class="l">策略</th><th class="l">商品</th><th class="l">來源</th><th class="l">非預設參數</th><th>K</th><th>交易</th><th>報酬%</th><th>回撤%</th><th>報酬/回撤</th><th>PF</th><th>持有 報酬/回撤</th><th class="l">時間</th></tr>`;
   HIST.forEach((x, i) => {
     const beat = x.bh_rmdd !== undefined && x.rmdd > x.bh_rmdd;
-    h += `<tr class="pick" data-i="${i}"><td class="l gold">${esc(x.strategy)}</td><td class="l">${esc(x.symbol)}</td><td>${x.minutes}</td><td>${x.trades}</td>
+    const defs = (META && META.strategies[x.strategy]) ? META.strategies[x.strategy].inputs : {};
+    const diff = Object.entries(x.params || {}).filter(([k, v]) => k in defs && Number(defs[k]) !== Number(v)).map(([k, v]) => `${k}=${v}`).join(" ");
+    const src = x.source === "duka" ? "Duka" : String(x.source || "").replace(/^mt5-/, "");
+    h += `<tr class="pick" data-i="${i}"><td class="l gold">${esc(x.strategy)}</td><td class="l">${esc(x.symbol)}</td><td class="l dimc">${esc(src)}</td><td class="l">${diff ? esc(diff) : '<span class="dimc">預設</span>'}</td><td>${x.minutes}</td><td>${x.trades}</td>
       <td>${sgn(x.ret, 2)}</td><td>${fmt(x.mdd, 2)}</td><td>${beat ? `<b>${fmt(x.rmdd, 2)}</b>` : fmt(x.rmdd, 2)}</td><td>${fmt(x.pf, 2)}</td><td>${fmt(x.bh_rmdd, 2)}</td><td class="l dimc">${esc(x.t)}</td></tr>`;
   });
   $("#hist").innerHTML = h;
@@ -834,7 +837,7 @@ async function resumeJobs() {
   }
 }
 
-loadMeta().then(loadPresets).then(resumeJobs).catch(e => document.querySelector("main").prepend(el("div", {className: "panel err"}, e.message)));
+loadMeta().then(() => { renderHist(); }).then(loadPresets).then(resumeJobs).catch(e => document.querySelector("main").prepend(el("div", {className: "panel err"}, e.message)));
 </script>
 </body>
 </html>

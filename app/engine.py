@@ -31,7 +31,7 @@ COMMON_INPUTS = {"UNIT_N": 100, "UNIT_MODE": 0, "WKX": 15, "DAYX": 0}
 COMMON_DOC = {"UNIT_N": "停損停利單位：AvgRange 期數（UNIT_MODE=0）",
               "UNIT_MODE": "單位模式：0 = AvgRange(UNIT_N)、1 = 價格的 0.1%",
               "WKX": "週末（或長假）休市前幾分鐘出場且不再進場；0 = 抱單過週末",
-              "DAYX": "日內出場：每個交易日收盤前幾分鐘出場且當天不再進場，避開隔夜利息；0 = 關閉"}
+              "DAYX": "不過夜：券商每日轉倉（美東 17:00）前最後一筆報價之前幾分鐘出場、轉倉前不再進場，避開隔夜利息；0 = 關閉"}
 
 
 class Strategy:
@@ -211,7 +211,8 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
         strat.u = float(strat.u_now)
         strat.entries_today += 1
         cur = {"dir": direction, "entry": price, "entry_ts": int(mts[j]), "label": label,
-               "swap": 0.0, "bars": 0, "entry_i": i, "entry_tday": int(m["tday"][j])}
+               "swap": 0.0, "bars": 0, "entry_i": i, "entry_tday": int(m["tday"][j]),
+               "roll": int(m["roll"][j])}
 
     def close_pos(price, j, label):
         nonlocal cur, realized
@@ -250,12 +251,14 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
         strat.i = i
         td = b.tday[i]
         if td != prev_tday:
-            if prev_tday is not None and cur is not None:
-                nights = int(td - prev_tday)
-                rate = swap_l if cur["dir"] > 0 else swap_s
-                cur["swap"] += b.o[i] * rate * nights
             strat.entries_today = 0
             prev_tday = td
+        # 隔夜利息：持倉跨過券商轉倉時點（美東 17:00）才收，週末一次收 3 天
+        rl = int(m["roll"][a])
+        if cur is not None and rl > cur["roll"]:
+            rate = swap_l if cur["dir"] > 0 else swap_s
+            cur["swap"] += b.o[i] * rate * (rl - cur["roll"])
+            cur["roll"] = rl
 
         trading = start_i <= i < end_i
         # 週末切點
@@ -309,7 +312,7 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
                 strat.maxprofit = max(strat.maxprofit, (mc[entry_j] - strat.entryprice) * strat.mp)
         # 週末強制出場
         if cut < e and cur is not None:
-            close_pos(mo[cut], cut, "週末出場" if wk_only[cut] else "日內出場")
+            close_pos(mo[cut], cut, "週末出場" if wk_only[cut] else "轉倉前出場")
         if cur is not None:
             cur["bars"] += 1
             bars_in_pos += 1

@@ -56,11 +56,16 @@ def minute_frame(m, symbol=None):
     # 每一分鐘距離「本週最後一分鐘」還有幾秒
     idx_last = np.flatnonzero(week_last)
     nxt = idx_last[np.searchsorted(idx_last, np.arange(len(ts)))]
-    # 每個交易日最後一分鐘（隔夜利息在交易日切換時收取）
-    day_last = np.concatenate([tday_ord[1:] != tday_ord[:-1], [True]])
-    idx_dl = np.flatnonzero(day_last)
-    nxt_d = idx_dl[np.searchsorted(idx_dl, np.arange(len(ts)))]
-    m["to_day_end"] = ts[nxt_d] - ts
+    # 券商轉倉（收隔夜利息）的時點：所有 CFD 都是美東 17:00（伺服器午夜），與商品交易所時區無關
+    ny = pd.to_datetime(ts, unit="s", utc=True).tz_convert("America/New_York")
+    roll_day = (ny + pd.Timedelta(hours=7)).normalize().tz_localize(None)
+    roll_ord = roll_day.to_numpy().astype("datetime64[D]").astype("int64")
+    m["roll"] = roll_ord
+    # 每分鐘距離「下一次轉倉前最後一筆報價」還有幾秒（日內出場 DAYX 用）
+    roll_last = np.concatenate([roll_ord[1:] != roll_ord[:-1], [True]])
+    idx_rl = np.flatnonzero(roll_last)
+    nxt_r = idx_rl[np.searchsorted(idx_rl, np.arange(len(ts)))]
+    m["to_day_end"] = ts[nxt_r] - ts
     m["_et"] = True
     m["hhmm"] = hhmm
     m["tday"] = tday_ord
