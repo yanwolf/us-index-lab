@@ -467,7 +467,9 @@ function renderHist() {
     if ([...$("#src").options].some(o => o.value === x.source)) $("#src").value = x.source;
     if (x.align) $("#align").value = x.align;
     onStrat({minutes: x.minutes, params: x.params});
-    $("#btstat").textContent = `已帶回 ${x.strategy}／${x.symbol} 的參數`;
+    if (x.range && x.range.length === 2) { $("#start").value = x.range[0]; $("#end").value = x.range[1]; $("#start").dataset.touched = 1; }
+    else { delete $("#start").dataset.touched; defaultDates(); }
+    $("#btstat").textContent = `已帶回 ${x.strategy}／${x.symbol}／${x.source} 的參數與期間`;
   });
 }
 $("#histclr").onclick = () => { if (confirm("清除所有回測紀錄？")) { HIST = []; localStorage.removeItem("bt_hist"); renderHist(); } };

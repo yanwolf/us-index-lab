@@ -17,6 +17,9 @@ def _ts(s, end=False, tz="America/New_York"):
     return int(d.timestamp())
 
 
+WARMUP_DAYS = 30      # 指標暖機：資料開頭 30 天只算指標、不交易
+
+
 def run(req, collect_trades=True):
     """req：source, symbol, strategy, params, minutes, align, start, end, costs(可選)"""
     cls = REGISTRY[req["strategy"]]
@@ -24,8 +27,12 @@ def run(req, collect_trades=True):
     costs = cost_defaults(req["symbol"])
     costs.update({k: float(v) for k, v in (req.get("costs") or {}).items() if v is not None and v != ""})
     tz = inst(req["symbol"])["tz"]
+    start_ts = _ts(req.get("start"), tz=tz)
+    min_start = int(m["ts"][0]) + WARMUP_DAYS * 86400
+    if start_ts is None or start_ts < min_start:
+        start_ts = min_start
     res = engine.run(cls, req.get("params") or {}, m, costs, minutes=req.get("minutes"),
-                     align=req.get("align", "session"), start_ts=_ts(req.get("start"), tz=tz),
+                     align=req.get("align", "session"), start_ts=start_ts,
                      end_ts=_ts(req.get("end"), end=True, tz=tz), cache_key=(req.get("source", "duka"), req["symbol"]),
                      collect_trades=collect_trades, symbol=req["symbol"])
     res["costs"] = costs
