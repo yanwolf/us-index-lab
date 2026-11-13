@@ -27,10 +27,11 @@ class Order:
         self.kind, self.action, self.price, self.label = kind, action, price, label
 
 
-COMMON_INPUTS = {"UNIT_N": 100, "UNIT_MODE": 0, "WKX": 15}
+COMMON_INPUTS = {"UNIT_N": 100, "UNIT_MODE": 0, "WKX": 15, "DAYX": 0}
 COMMON_DOC = {"UNIT_N": "停損停利單位：AvgRange 期數（UNIT_MODE=0）",
               "UNIT_MODE": "單位模式：0 = AvgRange(UNIT_N)、1 = 價格的 0.1%",
-              "WKX": "週末（或長假）休市前幾分鐘出場且不再進場；0 = 抱單過週末"}
+              "WKX": "週末（或長假）休市前幾分鐘出場且不再進場；0 = 抱單過週末",
+              "DAYX": "日內出場：每個交易日收盤前幾分鐘出場且當天不再進場，避開隔夜利息；0 = 關閉"}
 
 
 class Strategy:
@@ -178,9 +179,11 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
     mo, mh, ml, mc, mts = m["o"], m["h"], m["l"], m["c"], m["ts"]
     wkx = int(strat.p.get("WKX", 15))
     if wkx > 0:
-        wk_min = m["to_week_end"] < wkx * 60
+        wk_only = m["to_week_end"] < wkx * 60
     else:
-        wk_min = np.zeros(len(m["ts"]), dtype=bool)
+        wk_only = np.zeros(len(m["ts"]), dtype=bool)
+    dayx = int(strat.p.get("DAYX", 0))
+    wk_min = wk_only | (m["to_day_end"] < dayx * 60) if dayx > 0 else wk_only
 
     side_cost = costs["spread"] / 2.0 + costs["slippage"] + costs.get("commission", 0.0)
     swap_l = costs.get("swap_long_pct", 0.0) / 100.0 / 360.0
@@ -306,7 +309,7 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
                 strat.maxprofit = max(strat.maxprofit, (mc[entry_j] - strat.entryprice) * strat.mp)
         # 週末強制出場
         if cut < e and cur is not None:
-            close_pos(mo[cut], cut, "週末出場")
+            close_pos(mo[cut], cut, "週末出場" if wk_only[cut] else "日內出場")
         if cur is not None:
             cur["bars"] += 1
             bars_in_pos += 1

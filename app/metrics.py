@@ -77,6 +77,10 @@ def summarize(trades, daily, bars_in_pos=0, n_bars=0):
         "short_pts": round(float(nets[dirs < 0].sum()), 1) if n else 0.0,
         "years": round(years, 2),
     }
+    if trades and isinstance(trades[0], dict):
+        out["gross_pts"] = round(float(sum(t["gross"] for t in trades)), 1)
+        out["cost_pts"] = round(float(sum(t["cost"] for t in trades)), 1)
+        out["swap_pts"] = round(float(sum(t["swap"] for t in trades)), 1)
     out["ann_mdd"] = round(out["ann_pct"] / out["mdd_pct"], 2) if out["mdd_pct"] > 0 else (99.0 if out["ann_pct"] > 0 else 0.0)
     return out
 

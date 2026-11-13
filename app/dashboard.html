@@ -374,6 +374,7 @@ function renderResult(r) {
     ["獲利因子", fmt(s.pf, 2)], ["勝率", fmt(s.win_rate) + "%"], ["平均每筆", sgn(s.avg_pts, 2)],
     ["賺賠比", fmt(s.payoff, 2)], ["最大回撤點數", fmt(s.mdd_pts)], ["淨利／回撤", fmt(s.net_mdd, 2)],
     ["最多連虧", s.max_consec_loss + " 筆"], ["多方點數", sgn(s.long_pts)], ["空方點數", sgn(s.short_pts)],
+    ["未扣成本點數", sgn(s.gross_pts)], ["點差＋滑價", fmt(-(s.cost_pts || 0))], ["隔夜利息", sgn(-(s.swap_pts || 0))],
     ["期間", (r.range || []).join(" ～ ")]];
   kv.forEach(([k, v]) => { const d = el("div"); d.innerHTML = `<div class="hint">${k}</div><div>${v}</div>`; g.append(d); });
   p1.append(g);

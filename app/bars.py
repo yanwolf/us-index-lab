@@ -56,6 +56,11 @@ def minute_frame(m, symbol=None):
     # 每一分鐘距離「本週最後一分鐘」還有幾秒
     idx_last = np.flatnonzero(week_last)
     nxt = idx_last[np.searchsorted(idx_last, np.arange(len(ts)))]
+    # 每個交易日最後一分鐘（隔夜利息在交易日切換時收取）
+    day_last = np.concatenate([tday_ord[1:] != tday_ord[:-1], [True]])
+    idx_dl = np.flatnonzero(day_last)
+    nxt_d = idx_dl[np.searchsorted(idx_dl, np.arange(len(ts)))]
+    m["to_day_end"] = ts[nxt_d] - ts
     m["_et"] = True
     m["hhmm"] = hhmm
     m["tday"] = tday_ord
