@@ -62,11 +62,23 @@ def find_symbol(key, override=None):
     return None
 
 
+def wait_tick(symbol, seconds=15):
+    """等到有報價（剛選入市場報價時要幾秒才會有）；等不到回 None"""
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        tick = mt5.symbol_info_tick(symbol)
+        if tick and tick.time > 0 and (tick.bid > 0 or tick.ask > 0):
+            return tick
+        time.sleep(0.5)
+    return None
+
+
 def server_offset_hours(symbol):
-    tick = mt5.symbol_info_tick(symbol)
+    tick = wait_tick(symbol, 5)
     if not tick:
         return None
-    return round((tick.time - time.time()) / 3600)
+    off = round((tick.time - time.time()) / 3600)
+    return off if -14 <= off <= 14 else None          # 報價太舊（休市）就不採用
 
 
 def make_converter(mode, symbol):
@@ -82,7 +94,10 @@ def make_converter(mode, symbol):
             mode = f"fixed:{off:+d}"
         else:
             mode = "nyclose"
-        print(f"  伺服器時差判斷：目前 GMT{off:+d}（美東 GMT{et_off:+d}）→ 使用 {mode}")
+        if off is None:
+            print(f"  伺服器時差判斷：沒有即時報價可比對，採用多數券商的紐約收盤時區（美東 +7 小時）")
+        else:
+            print(f"  伺服器時差判斷：目前 GMT{off:+d}（美東 GMT{et_off:+d}）→ 使用 {mode}")
     if mode == "nyclose":
         def conv(t):
             wall = pd.to_datetime(t, unit="s") - pd.Timedelta(hours=7)          # 伺服器牆鐘 → 美東牆鐘
@@ -100,6 +115,7 @@ def probe_history(symbol, max_years):
     cur_end = now
     for k in range(int(max_years * 12) + 1):
         cur_start = cur_end - timedelta(days=31)
+        print(f"\r  往回撈 1 分 K：第 {k + 1} 個月（{cur_start:%Y-%m}）...  ", end="", flush=True)
         r = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, cur_start, cur_end)
         if r is None or len(r) == 0:
             empty += 1
@@ -109,7 +125,6 @@ def probe_history(symbol, max_years):
             empty = 0
             frames.append(pd.DataFrame(r))
         cur_end = cur_start
-        print(f"\r  往回撈 1 分 K：{k + 1} 個月", end="", flush=True)
     print()
     if not frames:
         return pd.DataFrame()
@@ -128,15 +143,26 @@ def main():
     ap.add_argument("--hk50", default=None, help="手動指定恆指商品代碼")
     ap.add_argument("--server-tz", default="auto", help="auto / nyclose / fixed:+2 之類")
     ap.add_argument("--out", default=".", help="輸出資料夾")
+    ap.add_argument("--force", action="store_true", help="已有報告也重跑")
     a = ap.parse_args()
 
-    ok = mt5.initialize(path=a.terminal) if a.terminal else mt5.initialize()
+    ok = mt5.initialize(path=a.terminal, timeout=90000) if a.terminal else mt5.initialize(timeout=90000)
     if not ok:
         sys.exit(f"MT5 初始化失敗：{mt5.last_error()}（確認終端機已登入、路徑正確）")
     ti, ai = mt5.terminal_info(), mt5.account_info()
     print(f"終端機：{ti.company}／{ti.name}　帳號：{ai.login if ai else '?'}（{ai.server if ai else '?'}）")
     print(f"圖表最大 K 線數 maxbars = {ti.maxbars:,}" + ("　⚠ 偏小，歷史可能被截斷，建議改成最大後重開" if ti.maxbars < 2_000_000 else ""))
     os.makedirs(a.out, exist_ok=True)
+    if ai:
+        a.broker = f"{a.broker}-{ai.login}"
+    if not a.force and os.path.exists(os.path.join(a.out, f"mt5_{a.broker}_report.json")):
+        print(f"帳號 {ai.login if ai else '?'} 已經有報告，跳過（要重跑請刪掉 results 裡對應的檔案）")
+        mt5.shutdown()
+        return
+    if not ti.connected:
+        print("⚠ 終端機目前沒有連上券商伺服器：請確認 MT5 右下角不是「無連線」（需要開著 VPN），再重跑一次")
+        mt5.shutdown()
+        return
     report = {"broker": a.broker, "company": ti.company, "server": ai.server if ai else None,
               "maxbars": ti.maxbars, "probed_at": datetime.now(timezone.utc).isoformat()[:19], "symbols": {}}
 
@@ -146,9 +172,10 @@ def main():
         if not sym:
             continue
         mt5.symbol_select(sym, True)
-        time.sleep(0.5)
+        tick = wait_tick(sym, 15)
+        if not tick:
+            print("  ⚠ 15 秒內沒有收到報價（可能休市或沒連線），點差欄位會是 0，其餘照跑")
         si = mt5.symbol_info(sym)
-        tick = mt5.symbol_info_tick(sym)
         spec = {
             "symbol": sym, "digits": si.digits, "point": si.point,
             "spread_now_points": si.spread, "spread_now_price": round(si.spread * si.point, 5),
@@ -164,6 +191,7 @@ def main():
         for k, v in spec.items():
             print(f"  {k:24s} {v}")
         conv, mode = make_converter(a.server_tz, sym)
+        print("  向伺服器索取 1 分 K 歷史，第一次每個月可能要等幾十秒 ...")
         df = probe_history(sym, a.years)
         if df.empty:
             print("  沒有撈到任何 1 分 K")
