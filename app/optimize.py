@@ -26,7 +26,8 @@ from . import backtest, metrics
 
 MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "3000"))
 WORKERS = int(os.getenv("OPT_WORKERS", str(max(1, os.cpu_count() or 2))))
-OBJECTIVES = {"net_mdd": "淨利/最大回撤", "pf": "獲利因子", "net_pts": "淨利點數", "sharpe": "Sharpe"}
+OBJECTIVES = {"ret_mdd": "報酬%/回撤%（建議：不受指數點位高低影響）", "net_mdd": "淨利點數/回撤點數", "pf": "獲利因子",
+              "net_pts": "淨利點數", "sharpe": "Sharpe"}
 RANK_BY = {"plateau": "平台分數（自己＋相鄰參數的中位數，不選孤峰）", "self": "只看自己"}
 
 
@@ -125,7 +126,7 @@ def _obj(s, objective):
     return v if v == v else 0.0
 
 
-def run(req, grid, split=0.67, objective="net_mdd", min_trades=30, wf_k=4, wf_m=2,
+def run(req, grid, split=0.67, objective="ret_mdd", min_trades=30, wf_k=4, wf_m=2,
         progress=None, stop_flag=None, top=60, rank_by="plateau"):
     keys, vals, total = combos(grid)
     if total > MAX_COMBOS:

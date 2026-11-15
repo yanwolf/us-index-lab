@@ -166,7 +166,7 @@ async def run_optimize(body: dict):
     if total > optimize.MAX_COMBOS:
         raise HTTPException(400, f"組合數 {total:,} 超過上限 {optimize.MAX_COMBOS:,}")
     job = jobs.start("optimize", lambda p, s: optimize.run(
-        req, grid, split=float(body.get("split", 0.67)), objective=body.get("objective", "net_mdd"),
+        req, grid, split=float(body.get("split", 0.67)), objective=body.get("objective", "ret_mdd"),
         min_trades=int(body.get("min_trades", 30)), wf_k=int(body.get("wf_k", 4)), wf_m=int(body.get("wf_m", 2)),
         rank_by=body.get("rank_by", "plateau"),
         progress=p, stop_flag=s),

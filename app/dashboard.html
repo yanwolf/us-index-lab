@@ -684,20 +684,20 @@ function renderLS(r) {
   head.append(el("h2", {}, "總表"));
   head.append(el("p", {className: "hint"}, `資料來源 ${esc(r.source)}；滑價 × ${r.slip_mult}。回復因子 = 淨利點數 ÷ 最大回撤點數；每年報酬/回撤 = 年化報酬% ÷ 最大回撤%。` +
     (r.skipped.length ? `　沒有資料而略過：${r.skipped.map(esc).join("、")}` : "")));
-  let t = `<tr><th class="l">商品</th><th class="l"></th><th>交易</th><th>PF</th><th>勝率</th><th>淨利點數</th><th>報酬%</th><th>回撤%</th><th>回復因子</th><th>每年報酬/回撤</th><th>同時持倉</th></tr>`;
+  let t = `<tr><th class="l">商品</th><th class="l"></th><th>交易</th><th>PF</th><th>勝率</th><th>淨利點數</th><th>報酬%</th><th>回撤%</th><th title="淨利點數 ÷ 回撤點數">回復因子(點)</th><th title="年化報酬% ÷ 最大回撤%">每年報酬/回撤</th><th>同時持倉</th></tr>`;
   r.results.forEach(x => {
     const L = x.rows.find(z => z.leg === "多方"), C = x.rows.find(z => z.leg === "多空合跑");
     x.rows.forEach((z, k) => {
-      const better = z.leg === "多空合跑" && L && z.rf > L.rf;
+      const better = z.leg === "多空合跑" && L && z.ann_mdd > L.ann_mdd;
       t += `<tr${z.leg === "多空合跑" ? ' class="bhrow"' : ""}><td class="l">${k === 0 ? esc(x.name) : ""}</td><td class="l ${z.leg === "多空合跑" ? "gold" : ""}">${esc(z.leg)}</td>
         <td>${z.trades}</td><td>${fmt(z.pf, 2)}</td><td>${fmt(z.win_rate)}%</td><td>${sgn(z.net_pts)}</td><td>${sgn(z.ret_pct, 2)}</td><td>${fmt(z.mdd_pct, 2)}</td>
-        <td>${better ? `<b>${fmt(z.rf, 2)}</b>` : fmt(z.rf, 2)}</td><td>${fmt(z.ann_mdd, 2)}</td><td>${z.overlap ?? ""}</td></tr>`;
+        <td>${fmt(z.rf, 2)}</td><td>${better ? `<b>${fmt(z.ann_mdd, 2)}</b>` : fmt(z.ann_mdd, 2)}</td><td>${z.overlap ?? ""}</td></tr>`;
     });
     const b = x.buy_hold || {};
     t += `<tr><td></td><td class="l dimc">買進持有</td><td></td><td></td><td></td><td></td><td class="dimc">${fmt(b.ret_pct, 2)}</td><td class="dimc">${fmt(b.mdd_pct, 2)}</td><td></td><td class="dimc">${fmt(b.ann_mdd, 2)}</td><td></td></tr>`;
   });
   head.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
-  head.append(el("p", {className: "hint"}, "合跑的回復因子加粗 = 高於只跑多方（空方有對沖價值）。"));
+  head.append(el("p", {className: "hint"}, "合跑的「每年報酬/回撤」加粗 = 高於只跑多方（空方有對沖價值）。用 % 而不用點數判斷：指數點位翻倍的期間（例如日經），點數會放大後期交易、低估前期回撤。"));
   out.append(head);
   r.results.forEach(x => {
     if (!x.yearly) return;
