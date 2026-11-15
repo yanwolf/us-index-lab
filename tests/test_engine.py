@@ -27,7 +27,7 @@ def test_all():
             assert t["exit_ts"] >= t["entry_ts"]
         if cls.name in ("AR_crossover", "GuYuan_2024", "GuYuan_2025"):
             assert all(t["dir"] == 1 for t in tr)
-        if cls.name == "AR_crossunder":
+        if cls.name in ("AR_crossunder", "GuYuan_2024_S"):
             assert all(t["dir"] == -1 for t in tr)
 
 

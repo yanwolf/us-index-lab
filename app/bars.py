@@ -136,6 +136,7 @@ def build(m, minutes, align="session", cache_key=None, symbol=None):
     b.wtd_high = s.groupby(b.week_idx).cummax().to_numpy()
     b.wtd_low = pd.Series(b.l).groupby(b.week_idx).cummin().to_numpy()
     b.cache = {}
+    b.mf = m                                  # 分鐘資料（CloseS 其他時段定義要用）
     if cache_key is not None:
         _bars_cache[(cache_key, minutes, align)] = b
         if len(_bars_cache) > 12:
@@ -233,3 +234,48 @@ def daily_sma(b, n):
     if k not in b.cache:
         b.cache[k] = pd.Series(b.day_close).rolling(n, min_periods=n).mean().to_numpy()
     return b.cache[k]
+
+
+# ---------------------------------------------------------------- CloseS 的時段定義
+SES_MODES = {
+    0: "主時段／延長時段（現貨開收盤切兩段，類比台指日夜盤）",
+    1: "交易日（一天一段，等於 CloseD）",
+    2: "等長兩段（交易日切換點起每 12 小時一段）",
+    3: "三大市場（東京 09:00、倫敦 08:00、紐約 09:30 開盤切三段）",
+}
+_TRI = (("Asia/Tokyo", 9 * 60), ("Europe/London", 8 * 60), ("America/New_York", 9 * 60 + 30))
+
+
+def _last_open(ts, tz, open_min):
+    """每一分鐘之前（含）最近一次「tz 當地 open_min 開盤」的 UTC 秒"""
+    lt = pd.to_datetime(ts, unit="s", utc=True).tz_convert(tz)
+    mins = (lt.hour * 60 + lt.minute).to_numpy()
+    since = (mins - open_min) % 1440
+    return ts - since * 60 - (ts % 60)
+
+
+def ses_series(b, mode):
+    """回傳 (每根 K 所屬時段的序號, 每個時段的收盤價)。時段以該根 K 最後一分鐘判定。"""
+    mode = int(mode)
+    if mode <= 0:
+        return b.ses_idx, b.ses_close
+    if mode == 1:
+        return b.day_idx, b.day_close
+    k = ("ses", mode)
+    if k in b.cache:
+        return b.cache[k]
+    m = b.mf
+    last = b.m1 - 1
+    if mode == 2:
+        key = m["tday"][last] * 2 + (m["day_mins"][last] >= 720)
+    else:
+        if "_tri" not in m:
+            ts = m["ts"]
+            m["_tri"] = np.maximum.reduce([_last_open(ts, tz, om) for tz, om in _TRI])
+        key = m["_tri"][last]
+    brk = np.flatnonzero(np.diff(key)) + 1
+    s0 = np.concatenate([[0], brk])
+    s1 = np.concatenate([brk, [b.n]])
+    out = (np.repeat(np.arange(len(s0)), s1 - s0), b.c[s1 - 1])
+    b.cache[k] = out
+    return out

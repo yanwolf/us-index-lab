@@ -99,22 +99,37 @@ class ARCrossunder(Strategy):
                 self.buytocover_stop(ep - self.maxprofit + self.U(p["Tstop"]), "移動停利")
 
 
+GY_DOC = dict(
+    N1="幾週前的週高/週低（0=本週）", N2="幾個時段前的收盤（時段定義看 SES）", N3="區間中值的期數",
+    SES="CloseS 時段定義：0 主時段／延長時段、1 交易日、2 等長兩段、3 東京／倫敦／紐約三段",
+    LOSS="停損（單位）", WIN="停利（單位）", Twin="啟動移動停利的浮盈（單位）", Tstop="移動停利回吐（單位）",
+    MA1="均線濾網快線（1 = 直接用收盤價）", MA2="均線濾網慢線期數（0 = 關閉），只管進場",
+    TF_N="日線趨勢濾網：前一日收盤在 N 日均線之上／下才進場，0 = 關閉",
+    EBX="進場K災難停損：AvgRange(200) 的倍數，只在進場那根 K 有效，0 = 關閉")
+
+
+def _gy_values(st):
+    p = st.p
+    mid = (st.highest("C", p["N3"]) + st.lowest("C", p["N3"])) * 0.5
+    cs = st.closeS(p["N2"])
+    return (st.highW(p["N1"]) + cs + mid) / 3, (st.lowW(p["N1"]) + cs + mid) / 3
+
+
 class GuYuan2024(Strategy):
+    """txf-sim sb_b21GuYuan_2024（只做多），2026-11 交接版：加上均線濾網、EBX、CloseS 時段定義。
+    預設值 = 台指最終版換算（LOSS 100／WIN 400／Twin 30／Tstop 300 點 ≈ 1.1／4.4／0.3／3.3 單位），
+    EBX 預設 0（台指最終版是 4，但在多方只有扣分或無影響；跑台指參數時另外帶入）。"""
     name = "GuYuan_2024"
     desc = "只做多。(週高+時段收+區間中值)/3 合成價位，H 站上 → N 根最高 stop 進場；L 跌破 → N 根最低 stop 出場"
     minutes = 60
-    inputs = dict(N1=3, N2=3, N3=5, HH=10, LL=10, LOSS=1.1, WIN=4.4, Twin=0.3, Tstop=3.3, TF_N=0)
-    doc = dict(TF_N="日線趨勢濾網：前一日收盤在 N 日均線之上才進場，0 = 關閉", N1="幾週前的週高/週低", N2="幾個時段前的收盤（RTH/ETH）", N3="區間中值的期數",
-               HH="進場：幾根最高價", LL="出場：幾根最低價", LOSS="停損（單位）", WIN="停利（單位）",
-               Twin="啟動移動停利的浮盈（單位）", Tstop="移動停利回吐（單位）")
+    inputs = dict(N1=3, N2=3, N3=5, SES=0, HH=10, LL=10, LOSS=1.1, WIN=4.4, Twin=0.3, Tstop=3.3,
+                  MA1=1, MA2=0, TF_N=0, EBX=0)
+    doc = dict(GY_DOC, HH="進場：幾根最高價", LL="出場：幾根最低價")
 
     def on_bar(self):
         p = self.p
-        mid = (self.highest("C", p["N3"]) + self.lowest("C", p["N3"])) * 0.5
-        cs = self.closeS(p["N2"])
-        v1 = (self.highW(p["N1"]) + cs + mid) / 3
-        v2 = (self.lowW(p["N1"]) + cs + mid) / 3
-        if self.mp != 1 and self.H() > v1 and self.trend_ok(p["TF_N"], 1):
+        v1, v2 = _gy_values(self)
+        if self.mp != 1 and self.H() > v1 and self.ma_trend(p["MA1"], p["MA2"], 1) and self.trend_ok(p["TF_N"], 1):
             self.buy_stop(self.highest("H", p["HH"]), "N 根最高突破")
         if self.mp == 1 and self.L() < v2:
             self.sell_stop(self.lowest("L", p["LL"]), "N 根最低跌破")
@@ -124,6 +139,38 @@ class GuYuan2024(Strategy):
             self.sell_limit(ep + self.U(p["WIN"]), "停利")
             if self.maxprofit > self.U(p["Twin"]):
                 self.sell_stop(ep + self.maxprofit - self.U(p["Tstop"]), "移動停利")
+
+
+class GuYuan2024Short(Strategy):
+    """GuYuan_2024 的空方鏡像（txf-sim GuYuan_2024_S）：L 跌破週低版合成價 → N 根最低 stop 放空；
+    H 站上週高版合成價 → N 根最高 stop 回補。預設值 = 台指最終版（LL 14、EBX 1）。"""
+    name = "GuYuan_2024_S"
+    desc = "只做空。(週低+時段收+區間中值)/3 合成價位，L 跌破 → N 根最低 stop 放空；H 站上 → N 根最高 stop 回補（GuYuan_2024 鏡像）"
+    minutes = 60
+    inputs = dict(N1=3, N2=3, N3=5, SES=0, HH=10, LL=14, LOSS=1.1, WIN=4.4, Twin=0.3, Tstop=3.3,
+                  MA1=1, MA2=0, TF_N=0, EBX=1)
+    doc = dict(GY_DOC, LL="進場：幾根最低價", HH="出場：幾根最高價")
+
+    def on_bar(self):
+        p = self.p
+        v1, v2 = _gy_values(self)
+        if self.mp != -1 and self.L() < v2 and self.ma_trend(p["MA1"], p["MA2"], -1) and self.trend_ok(p["TF_N"], -1):
+            self.sellshort_stop(self.lowest("L", p["LL"]), "N 根最低跌破")
+        if self.mp == -1 and self.H() > v1:
+            self.buytocover_stop(self.highest("H", p["HH"]), "N 根最高突破")
+        if self.mp < 0:
+            ep = self.entryprice
+            self.buytocover_stop(ep + self.U(p["LOSS"]), "停損")
+            self.buytocover_limit(ep - self.U(p["WIN"]), "停利")
+            if self.maxprofit > self.U(p["Twin"]):
+                self.buytocover_stop(ep - self.maxprofit + self.U(p["Tstop"]), "移動停利")
+
+
+# 台指最終版參數（GUYUAN_HANDOFF 第 3 節，點數換成單位）：批次回測「台指參數」用
+TXF_PRESET = {
+    "GuYuan_2024": dict(N1=3, N2=3, N3=5, HH=10, LL=10, LOSS=1.1, WIN=4.4, Twin=0.3, Tstop=3.3, MA1=1, MA2=0, EBX=4),
+    "GuYuan_2024_S": dict(N1=3, N2=3, N3=5, HH=10, LL=14, LOSS=1.1, WIN=4.4, Twin=0.3, Tstop=3.3, MA1=1, MA2=0, EBX=1),
+}
 
 
 class GuYuan2025(Strategy):
@@ -149,4 +196,4 @@ class GuYuan2025(Strategy):
             self.sell_limit(ep + self.U(p["WIN"]), "停利")
 
 
-REGISTRY = {c.name: c for c in (TMFF, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2025)}
+REGISTRY = {c.name: c for c in (TMFF, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025)}

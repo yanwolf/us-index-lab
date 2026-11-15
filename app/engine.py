@@ -14,6 +14,8 @@
   · 沒有結算日；週末規則：每週最後一筆報價前 WKX 分鐘起，市價出場並停止進場
     （直接看資料的休市缺口，任何市場、提早收盤、長假都適用）
   · 成本：每邊 spread/2 + slippage + commission，另計隔夜利息
+  · EBX（策略有這個參數才生效）：進場成交後，在進場那根 K 剩下的分鐘裡掛一張
+    AvgRange(200)×EBX 的觸價停損（AvgRange 取進場前一根 K 收盤時的值）；那根結束後交回策略自己的停損
 """
 import numpy as np
 
@@ -83,10 +85,21 @@ class Strategy:
         return self.b.day_close[max(k, 0)]
 
     def closeS(self, n):
+        """n 個時段前的收盤。時段定義由策略參數 SES 決定（見 bars.SES_MODES），沒有 SES 就用 0。"""
         if n == 0:
             return self.C()
-        k = self.b.ses_idx[self.i] - int(n)
-        return self.b.ses_close[max(k, 0)]
+        idx, close = B.ses_series(self.b, self.p.get("SES", 0))
+        k = idx[self.i] - int(n)
+        return close[max(k, 0)]
+
+    def ma_trend(self, fast, slow, side=1):
+        """均線趨勢濾網（txf-sim GuYuan 系列）：slow<=0 或 fast>=slow 視為關閉；
+        否則 MA(C,fast) 在 MA(C,slow) 之上（side=1）／之下（side=-1）才通過。fast=1 就是收盤價。"""
+        fast, slow = int(fast), int(slow)
+        if slow <= 0 or fast >= slow:
+            return True
+        f, sl = self.avg("C", max(1, fast)), self.avg("C", slow)
+        return f > sl if side > 0 else f < sl
 
     def highW(self, n):
         if n == 0:
@@ -185,6 +198,8 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
     dayx = int(strat.p.get("DAYX", 0))
     wk_min = wk_only | (m["to_day_end"] < dayx * 60) if dayx > 0 else wk_only
 
+    ebx = float(strat.p.get("EBX", 0) or 0)
+    ar200 = B.avgrange(b, 200) if ebx > 0 else None
     side_cost = costs["spread"] / 2.0 + costs["slippage"] + costs.get("commission", 0.0)
     swap_l = costs.get("swap_long_pct", 0.0) / 100.0 / 360.0
     swap_s = costs.get("swap_short_pct", 0.0) / 100.0 / 360.0
@@ -299,6 +314,22 @@ def run(strategy_cls, params, minutes_data, costs, minutes=None, align="session"
                 fill(o, px, j)
                 if strat.mp != 0 and strat.mp != was:
                     entry_j = j
+        # 進場 K 災難停損（EBX）
+        if entry_j is not None and ebx > 0 and i > 0 and cur is not None:
+            dist = float(ar200[i - 1]) * ebx
+            if dist > 0 and entry_j + 1 < cut:
+                d = cur["dir"]
+                stp = cur["entry"] - d * dist
+                seg_h, seg_l = mh[entry_j + 1:cut], ml[entry_j + 1:cut]
+                hit = (seg_l <= stp) if d > 0 else (seg_h >= stp)
+                if hit.any():
+                    k = entry_j + 1 + int(np.argmax(hit))
+                    if k > entry_j + 1:
+                        mx = (float(mh[entry_j + 1:k].max()) - cur["entry"]) if d > 0 else (cur["entry"] - float(ml[entry_j + 1:k].min()))
+                        strat.maxprofit = max(strat.maxprofit, mx)
+                    px = min(stp, mo[k]) if d > 0 else max(stp, mo[k])
+                    close_pos(px, k, "進場K災難停損")
+                    entry_j = None
         # 最大浮盈（進場那根只算成交之後的分鐘）
         if cur is not None:
             s0 = entry_j + 1 if entry_j is not None else a

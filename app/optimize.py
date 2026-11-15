@@ -27,6 +27,28 @@ from . import backtest, metrics
 MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "3000"))
 WORKERS = int(os.getenv("OPT_WORKERS", str(max(1, os.cpu_count() or 2))))
 OBJECTIVES = {"net_mdd": "淨利/最大回撤", "pf": "獲利因子", "net_pts": "淨利點數", "sharpe": "Sharpe"}
+RANK_BY = {"plateau": "平台分數（自己＋相鄰參數的中位數，不選孤峰）", "self": "只看自己"}
+
+
+def plateau(keys, vals, values):
+    """values：{參數 tuple: 目標值}。每個組合跟「任一參數往上或往下一格」的鄰居比較，
+    回 {tuple: (平台分數 = 自己與鄰居的中位數, 鄰居最差, 鄰居數)}。
+    孤峰（自己很好、鄰居很差）的平台分數會被拉低，一整片都好的區域分數才會高。"""
+    index = [{v: i for i, v in enumerate(vs)} for vs in vals]
+    out = {}
+    for key, v in values.items():
+        pos = [index[d][key[d]] for d in range(len(keys))]
+        nb = []
+        for d in range(len(keys)):
+            for step in (-1, 1):
+                q = pos[d] + step
+                if 0 <= q < len(vals[d]):
+                    nk = list(key); nk[d] = vals[d][q]
+                    nv = values.get(tuple(nk))
+                    if nv is not None:
+                        nb.append(nv)
+        out[key] = (float(np.median([v] + nb)), float(min(nb)) if nb else v, len(nb))
+    return out
 
 _REQ = None
 
@@ -104,7 +126,7 @@ def _obj(s, objective):
 
 
 def run(req, grid, split=0.67, objective="net_mdd", min_trades=30, wf_k=4, wf_m=2,
-        progress=None, stop_flag=None, top=60):
+        progress=None, stop_flag=None, top=60, rank_by="plateau"):
     keys, vals, total = combos(grid)
     if total > MAX_COMBOS:
         raise ValueError(f"組合數 {total:,} 超過上限 {MAX_COMBOS:,}，請放大步距或減少參數")
@@ -149,7 +171,15 @@ def run(req, grid, split=0.67, objective="net_mdd", min_trades=30, wf_k=4, wf_m=
         s_is = seg_summary(trades, daily, d0, split_tday)
         s_os = seg_summary(trades, daily, split_tday, d1)
         rows.append({"params": params, "is": s_is, "os": s_os, "ok": s_is["trades"] >= int(min_trades)})
-    rows.sort(key=lambda r: (r["ok"], _obj(r["is"], objective)), reverse=True)
+    tkey = lambda prm: tuple(prm[k] for k in keys)
+    # 交易數不足的組合，在平台計算裡當成很差（避免它們墊高鄰居）
+    is_vals = {tkey(r["params"]): (_obj(r["is"], objective) if r["ok"] else min(0.0, _obj(r["is"], objective))) for r in rows}
+    pl = plateau(keys, vals, is_vals)
+    for r in rows:
+        sc, worst, n = pl[tkey(r["params"])]
+        r["plateau"] = round(sc, 3); r["nb_worst"] = round(worst, 3); r["nb_n"] = n
+    rank = (lambda r: r["plateau"]) if rank_by == "plateau" else (lambda r: _obj(r["is"], objective))
+    rows.sort(key=lambda r: (r["ok"], rank(r)), reverse=True)
     valid = [r for r in rows if r["ok"]]
     n_ok = len(valid)
     q = max(1, n_ok // 5)
@@ -182,15 +212,21 @@ def run(req, grid, split=0.67, objective="net_mdd", min_trades=30, wf_k=4, wf_m=
         for i in range(k):
             ta, tb, sa, sb = bounds[i], bounds[i + m], bounds[i + m], bounds[i + m + 1]
             best, best_v = None, None
+            cand = []
             for params, trades, daily in raw:
                 if not daily:
                     continue
                 s = seg_summary(trades, daily, ta, tb)
-                if s["trades"] < fold_min:
+                cand.append((params, trades, daily, s))
+            fold_vals = {tkey(c[0]): (_obj(c[3], objective) if c[3]["trades"] >= fold_min else min(0.0, _obj(c[3], objective)))
+                         for c in cand}
+            fold_pl = plateau(keys, vals, fold_vals) if rank_by == "plateau" else None
+            for c in cand:
+                if c[3]["trades"] < fold_min:
                     continue
-                v = _obj(s, objective)
+                v = fold_pl[tkey(c[0])][0] if fold_pl else _obj(c[3], objective)
                 if best_v is None or v > best_v:
-                    best, best_v = (params, trades, daily, s), v
+                    best, best_v = c, v
             if best is None:
                 folds.append({"train": [metrics.tday_str(ta), metrics.tday_str(tb - 1)],
                               "test": [metrics.tday_str(sa), metrics.tday_str(sb - 1)], "params": None})
@@ -213,5 +249,5 @@ def run(req, grid, split=0.67, objective="net_mdd", min_trades=30, wf_k=4, wf_m=
               "bh": bh_segment(bdaily, bounds[m], d1), "param_changes": changes,
               "test_range": [metrics.tday_str(bounds[m]), metrics.tday_str(d1 - 1)]}
 
-    return {"total": total, "done": done, "valid": n_ok, "objective": objective, "keys": keys,
+    return {"total": total, "done": done, "valid": n_ok, "objective": objective, "keys": keys, "rank_by": rank_by,
             **split_res, "wf": wf}

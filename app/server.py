@@ -10,9 +10,9 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import backtest, dukascopy, jobs, mt5import, optimize, portfolio, store
+from . import backtest, batch, dukascopy, jobs, mt5import, optimize, portfolio, store
 from .instruments import INSTRUMENTS, cost_defaults
-from .strategies import REGISTRY
+from .strategies import REGISTRY, TXF_PRESET
 
 PASSWORD = os.getenv("LAB_PASSWORD", "")
 HERE = os.path.dirname(__file__)
@@ -55,6 +55,9 @@ def meta():
         "strategies": {k: {"desc": c.desc, "minutes": c.minutes, "inputs": c.all_inputs(), "doc": c.all_doc()}
                        for k, c in REGISTRY.items()},
         "objectives": optimize.OBJECTIVES,
+        "rank_by": optimize.RANK_BY,
+        "ses_modes": {int(k): v for k, v in __import__("app.bars", fromlist=["SES_MODES"]).SES_MODES.items()},
+        "txf_preset": TXF_PRESET,
         "data": store.inventory(),
         "workers": optimize.WORKERS,
         "max_combos": optimize.MAX_COMBOS,
@@ -134,6 +137,23 @@ async def run_portfolio(body: dict):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/batch")
+async def run_batch(body: dict):
+    """body：source、symbols、legs=[{name, strategy, params}]、start、end、slip_mult"""
+    legs = [(l["name"], l["strategy"], l.get("params") or {}) for l in body.get("legs") or []]
+    if not legs or any(l[1] not in REGISTRY for l in legs):
+        raise HTTPException(400, "策略設定不正確")
+    syms = [s for s in body.get("symbols") or [] if s in INSTRUMENTS]
+    if not syms:
+        raise HTTPException(400, "至少選一個商品")
+    if jobs.running("batch"):
+        raise HTTPException(409, "已有批次在跑")
+    job = jobs.start("batch", lambda p, s: batch.run(body.get("source", "mt5-pepperstone"), syms, legs, body.get("start"),
+                                                     body.get("end"), float(body.get("slip_mult", 1) or 1), p, s),
+                     label=f"批次 {'／'.join(l[0] for l in legs)} × {len(syms)} 商品")
+    return jobs.public(job)
+
+
 @app.post("/api/optimize")
 async def run_optimize(body: dict):
     if jobs.running("optimize"):
@@ -148,6 +168,7 @@ async def run_optimize(body: dict):
     job = jobs.start("optimize", lambda p, s: optimize.run(
         req, grid, split=float(body.get("split", 0.67)), objective=body.get("objective", "net_mdd"),
         min_trades=int(body.get("min_trades", 30)), wf_k=int(body.get("wf_k", 4)), wf_m=int(body.get("wf_m", 2)),
+        rank_by=body.get("rank_by", "plateau"),
         progress=p, stop_flag=s),
         label=f"{req.get('strategy')} {req.get('symbol')} {total} 組")
     return jobs.public(job)

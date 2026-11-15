@@ -76,6 +76,7 @@
   <button data-t="opt">最佳化</button>
   <button data-t="data">資料</button>
   <button data-t="pf">組合</button>
+  <button data-t="ls">多空批次</button>
   <button data-t="cmp">資料比對</button>
 </nav>
 <main>
@@ -130,11 +131,12 @@
     <div class="grid" style="margin-top:10px">
       <label>樣本內比例<input id="split" type="number" min="0.3" max="0.9" step="0.05" value="0.67"></label>
       <label>排序依據（樣本內）<select id="objective"></select></label>
+      <label>挑選方式<select id="rankby"></select></label>
       <label>樣本內最少交易數<input id="mintr" type="number" value="30" min="0"></label>
       <label>滾動驗證：測試段數 k<input id="wfk" type="number" value="4" min="0" max="12"></label>
       <label>滾動驗證：訓練段數 m<input id="wfm" type="number" value="2" min="1" max="8"></label>
     </div>
-    <p class="hint">單次切分：前段挑參數、後段只看結果。滾動驗證：區間切成 m+k 等份，每次用 m 段挑參數、下一段測試，共測 k 次再接起來，模擬「定期重新調參數」實際會拿到的績效。k 設 0 可關閉。</p>
+    <p class="hint">平台分數：每組參數跟「任一參數往上或往下一格」的鄰居一起取中位數，孤峰會被拉低、一整片都好的區域才會排前面；滾動驗證每段也用同樣方式挑。單次切分：前段挑參數、後段只看結果。滾動驗證：區間切成 m+k 等份，每次用 m 段挑參數、下一段測試，共測 k 次再接起來，模擬「定期重新調參數」實際會拿到的績效。k 設 0 可關閉。</p>
     <div class="row" style="margin-top:12px">
       <button class="act" id="runopt">開始最佳化</button>
       <button class="sec" id="stopopt" disabled>停止</button>
@@ -178,6 +180,33 @@
 </section>
 
 <!-- ============ 比對 ============ -->
+<section id="ls">
+  <div class="panel">
+    <h2>多空批次回測</h2>
+    <p class="hint">同一組參數在多個指數上各跑多方、空方，再算多空合跑（各 1 單位、損益相加；兩支幾乎不會同時持倉，合跑只佔約 1 單位）。成本用各商品預設（Pepperstone 實測點差＋估計滑價）。評估重點：合跑的回復因子有沒有高於只跑多方。</p>
+    <div class="grid" style="margin-top:8px">
+      <label>資料來源<select id="lssrc"></select></label>
+      <label>多方策略<select id="lslong"></select></label>
+      <label>空方策略<select id="lsshort"></select></label>
+      <label>參數<select id="lspreset"><option value="txf">台指最終版（交接文件第 3 節）</option><option value="default">策略預設值</option><option value="custom">自訂（下方）</option></select></label>
+      <label>CloseS 時段定義 SES<select id="lsses"></select></label>
+      <label>滑價倍數<input id="lsslip" type="number" step="0.5" min="0" value="1"></label>
+      <label>開始（空白＝資料開頭＋暖機）<input id="lsstart" type="date"></label>
+      <label>結束<input id="lsend" type="date"></label>
+    </div>
+    <div class="row" style="margin-top:10px" id="lssyms"></div>
+    <details style="margin-top:10px"><summary>自訂參數（JSON，選「自訂」時使用）</summary>
+      <div class="grid" style="margin-top:8px;grid-template-columns:1fr 1fr">
+        <label>多方<textarea id="lspl" rows="4" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;font:12px monospace"></textarea></label>
+        <label>空方<textarea id="lsps" rows="4" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;font:12px monospace"></textarea></label>
+      </div>
+    </details>
+    <div class="row" style="margin-top:12px"><button class="act" id="runls">執行批次</button><span id="lsstat" class="dimc"></span></div>
+    <div class="bar"><i id="lsbar"></i></div>
+  </div>
+  <div id="lsout"></div>
+</section>
+
 <section id="pf">
   <div class="panel">
     <h2>策略組合</h2>
@@ -261,6 +290,7 @@ async function loadMeta() {
     onSym();
   }
   fillSel($("#objective"), Object.entries(META.objectives), true);
+  fillSel($("#rankby"), Object.entries(META.rank_by), true);
   renderInv();
   defaultDates();
 }
@@ -288,7 +318,8 @@ $("#sym").onchange = onSym;
 
 function onStrat(values) {
   const s = META.strategies[$("#strat").value];
-  $("#sdesc").textContent = s.desc + `（原版 ${s.minutes} 分 K）`;
+  $("#sdesc").textContent = s.desc + `（原版 ${s.minutes} 分 K）` +
+    ("SES" in s.inputs ? "　SES：" + Object.entries(META.ses_modes).map(([k, v]) => `${k}=${v}`).join("；") : "");
   $("#mins").value = values?.minutes || s.minutes;
   const box = $("#params"); box.innerHTML = "";
   for (const [k, v] of Object.entries(s.inputs)) {
@@ -601,6 +632,85 @@ function drawMulti(cv, S, tip, names) {
 }
 // renderLegs 需要 META，等 META 載入後再畫
 
+// ---------------------------------------------------------------- 多空批次
+function initLS() {
+  if ($("#lslong").options.length) return;
+  const strats = Object.keys(META.strategies).map(k => [k, k]);
+  fillSel($("#lslong"), strats); fillSel($("#lsshort"), strats);
+  $("#lslong").value = "GuYuan_2024"; $("#lsshort").value = "GuYuan_2024_S";
+  fillSel($("#lsses"), [["", "照參數（台指版＝0）"], ...Object.entries(META.ses_modes).map(([k, v]) => [k, `${k}：${v}`])]);
+  $("#lspl").value = JSON.stringify(META.txf_preset.GuYuan_2024 || {});
+  $("#lsps").value = JSON.stringify(META.txf_preset.GuYuan_2024_S || {});
+  $("#lssyms").innerHTML = Object.entries(META.instruments).map(([k, v]) =>
+    `<label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" value="${k}" checked style="width:auto">${esc(v.name)}</label>`).join("");
+}
+function lsSources() {
+  const srcs = [...new Set(META.data.map(d => d.source))];
+  fillSel($("#lssrc"), srcs.map(s => [s, s === "duka" ? "Dukascopy" : s]), true);
+  if (!$("#lssrc").dataset.set && srcs.includes("mt5-pepperstone")) { $("#lssrc").value = "mt5-pepperstone"; $("#lssrc").dataset.set = 1; }
+}
+document.querySelector('#nav button[data-t="ls"]').addEventListener("click", () => { initLS(); lsSources(); });
+function lsParams(which) {
+  const strat = $(which === "L" ? "#lslong" : "#lsshort").value, preset = $("#lspreset").value;
+  let p = {};
+  if (preset === "txf") p = {...(META.txf_preset[strat] || {})};
+  else if (preset === "custom") { try { p = JSON.parse($(which === "L" ? "#lspl" : "#lsps").value || "{}"); } catch (e) { throw new Error(`${which === "L" ? "多方" : "空方"}自訂參數不是正確的 JSON`); } }
+  if ($("#lsses").value !== "") p.SES = Number($("#lsses").value);
+  return p;
+}
+let LSJOB = null;
+$("#runls").onclick = async () => {
+  try {
+    const syms = [...document.querySelectorAll("#lssyms input:checked")].map(x => x.value);
+    const body = {source: $("#lssrc").value, symbols: syms, start: $("#lsstart").value || null, end: $("#lsend").value || null,
+      slip_mult: Number($("#lsslip").value || 1),
+      legs: [{name: "多方", strategy: $("#lslong").value, params: lsParams("L")}, {name: "空方", strategy: $("#lsshort").value, params: lsParams("S")}]};
+    const j = await api("/api/batch", {method: "POST", body});
+    LSJOB = j.id; $("#runls").disabled = true; $("#lsout").innerHTML = ""; pollLS();
+  } catch (e) { $("#lsstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+async function pollLS() {
+  const j = await api(`/api/jobs/${LSJOB}`).catch(e => ({status: "error", error: e.message}));
+  $("#lsbar").style.width = (j.total ? j.done / j.total * 100 : 0) + "%";
+  if (j.status === "running") { $("#lsstat").innerHTML = `<span class="tag run">執行中</span> ${j.done}／${j.total || "?"} 個商品`; return setTimeout(pollLS, 1200); }
+  $("#runls").disabled = false;
+  if (j.status === "error") { $("#lsstat").innerHTML = `<span class="err">${esc(j.error)}</span>`; return; }
+  $("#lsstat").innerHTML = `<span class="tag ok">完成</span>`;
+  if (j.result) renderLS(j.result);
+}
+function renderLS(r) {
+  const out = $("#lsout"); out.innerHTML = "";
+  const head = el("div", {className: "panel"});
+  head.append(el("h2", {}, "總表"));
+  head.append(el("p", {className: "hint"}, `資料來源 ${esc(r.source)}；滑價 × ${r.slip_mult}。回復因子 = 淨利點數 ÷ 最大回撤點數；每年報酬/回撤 = 年化報酬% ÷ 最大回撤%。` +
+    (r.skipped.length ? `　沒有資料而略過：${r.skipped.map(esc).join("、")}` : "")));
+  let t = `<tr><th class="l">商品</th><th class="l"></th><th>交易</th><th>PF</th><th>勝率</th><th>淨利點數</th><th>報酬%</th><th>回撤%</th><th>回復因子</th><th>每年報酬/回撤</th><th>同時持倉</th></tr>`;
+  r.results.forEach(x => {
+    const L = x.rows.find(z => z.leg === "多方"), C = x.rows.find(z => z.leg === "多空合跑");
+    x.rows.forEach((z, k) => {
+      const better = z.leg === "多空合跑" && L && z.rf > L.rf;
+      t += `<tr${z.leg === "多空合跑" ? ' class="bhrow"' : ""}><td class="l">${k === 0 ? esc(x.name) : ""}</td><td class="l ${z.leg === "多空合跑" ? "gold" : ""}">${esc(z.leg)}</td>
+        <td>${z.trades}</td><td>${fmt(z.pf, 2)}</td><td>${fmt(z.win_rate)}%</td><td>${sgn(z.net_pts)}</td><td>${sgn(z.ret_pct, 2)}</td><td>${fmt(z.mdd_pct, 2)}</td>
+        <td>${better ? `<b>${fmt(z.rf, 2)}</b>` : fmt(z.rf, 2)}</td><td>${fmt(z.ann_mdd, 2)}</td><td>${z.overlap ?? ""}</td></tr>`;
+    });
+    const b = x.buy_hold || {};
+    t += `<tr><td></td><td class="l dimc">買進持有</td><td></td><td></td><td></td><td></td><td class="dimc">${fmt(b.ret_pct, 2)}</td><td class="dimc">${fmt(b.mdd_pct, 2)}</td><td></td><td class="dimc">${fmt(b.ann_mdd, 2)}</td><td></td></tr>`;
+  });
+  head.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  head.append(el("p", {className: "hint"}, "合跑的回復因子加粗 = 高於只跑多方（空方有對沖價值）。"));
+  out.append(head);
+  r.results.forEach(x => {
+    if (!x.yearly) return;
+    const p = el("div", {className: "panel"});
+    p.append(el("h2", {}, `${x.name} 逐年報酬 %（${esc((x.range || []).join(" ～ "))}）`));
+    let y = `<tr><th class="l">年</th><th>多方</th><th>空方</th><th>合跑</th></tr>`;
+    x.yearly.forEach(r2 => y += `<tr><td class="l">${r2.year}</td><td>${sgn(r2["多方"], 2)}</td><td>${sgn(r2["空方"], 2)}</td><td><b>${sgn(r2["合跑"], 2)}</b></td></tr>`);
+    p.append(el("div", {className: "scroll"}, `<table>${y}</table>`));
+    p.append(el("p", {className: "hint"}, `成本：點差 ${x.costs.spread}、滑價每邊 ${fmt(x.costs.slippage, 2)}、隔夜利息多 ${x.costs.swap_long_pct}%／空 ${x.costs.swap_short_pct}%`));
+    out.append(p);
+  });
+}
+
 // ---------------------------------------------------------------- 參數存檔
 async function loadPresets() {
   PRESETS = await api("/api/presets");
@@ -633,7 +743,7 @@ function buildOptGrid(force) {
   for (const [k, v] of Object.entries(p)) {
     const row = el("div", {className: "optp"});
     const cb = el("input", {type: "checkbox"}); cb.dataset.k = k; cb.style.width = "auto";
-    const isInt = Number.isInteger(v) && !["LOSS", "WIN", "Twin", "Tstop", "BLOSS", "BWIN", "SLOSS", "SWIN", "BMax", "BTB", "SMax", "STB", "BB", "SS", "ATRX"].includes(k);
+    const isInt = Number.isInteger(v) && !["LOSS", "WIN", "Twin", "Tstop", "BLOSS", "BWIN", "SLOSS", "SWIN", "BMax", "BTB", "SMax", "STB", "BB", "SS", "ATRX", "EBX"].includes(k);
     const st = isInt ? Math.max(1, Math.round(Math.abs(v) * 0.2)) : Math.max(0.1, +(Math.abs(v) * 0.25).toFixed(1));
     const a = el("input", {type: "number", step: "any", value: +(v - 2 * st).toFixed(2)});
     const b = el("input", {type: "number", step: "any", value: +(v + 2 * st).toFixed(2)});
@@ -663,7 +773,7 @@ let OPTJOB = null;
 $("#runopt").onclick = async () => {
   try {
     const j = await api("/api/optimize", {method: "POST", body: {req: curReq(), grid: optGrid(), split: Number($("#split").value),
-      objective: $("#objective").value, min_trades: Number($("#mintr").value),
+      objective: $("#objective").value, min_trades: Number($("#mintr").value), rank_by: $("#rankby").value,
       wf_k: Number($("#wfk").value), wf_m: Number($("#wfm").value)}});
     OPTJOB = j.id; $("#runopt").disabled = true; $("#stopopt").disabled = false; $("#optout").innerHTML = "";
     pollOpt();
@@ -734,15 +844,18 @@ function renderOpt(r) {
   p2.append(el("h2", {}, "單次切分：各參數組合"));
   p2.append(el("p", {className: "hint"}, "第一列是同期買進持有。報酬% 是 1 倍名目、不複利。點一列可以把參數帶回回測頁執行。"));
   const bi = r.bh_is, bo = r.bh_os;
-  let t = `<tr><th class="l">參數</th><th>內 交易</th><th>內 PF</th><th>內 報酬%</th><th>內 報酬/回撤</th><th>外 交易</th><th>外 PF</th><th>外 報酬%</th><th>外 報酬/回撤</th></tr>`;
-  t += `<tr class="bhrow"><td class="l gold">買進持有</td><td>–</td><td>–</td><td>${sgn(bi.ret_pct, 2)}</td><td>${fmt(bi.ret_mdd, 2)}</td><td>–</td><td>–</td><td>${sgn(bo.ret_pct, 2)}</td><td>${fmt(bo.ret_mdd, 2)}</td></tr>`;
+  const objn = META.objectives[r.objective];
+  let t = `<tr><th class="l">參數</th><th title="自己與相鄰參數的中位數（${esc(objn)}）">平台分數</th><th title="相鄰參數裡最差的">鄰近最差</th><th>內 交易</th><th>內 PF</th><th>內 報酬%</th><th>內 報酬/回撤</th><th>外 交易</th><th>外 PF</th><th>外 報酬%</th><th>外 報酬/回撤</th></tr>`;
+  t += `<tr class="bhrow"><td class="l gold">買進持有</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${sgn(bi.ret_pct, 2)}</td><td>${fmt(bi.ret_mdd, 2)}</td><td>–</td><td>–</td><td>${sgn(bo.ret_pct, 2)}</td><td>${fmt(bo.ret_mdd, 2)}</td></tr>`;
   r.rows.forEach((x, i) => {
     const bI = x.is.ret_mdd > bi.ret_mdd, bO = x.os.ret_mdd > bo.ret_mdd;
     t += `<tr class="pick ${x.ok ? "" : "bad"}" data-i="${i}"><td class="l">${Object.entries(x.params).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" ")}</td>
+      <td>${fmt(x.plateau, 2)}</td><td class="${x.nb_worst < 0 ? "warn" : ""}">${fmt(x.nb_worst, 2)}</td>
       <td>${x.is.trades}</td><td>${fmt(x.is.pf, 2)}</td><td>${sgn(x.is.ret_pct, 2)}</td><td>${bI ? `<b>${fmt(x.is.ret_mdd, 2)}</b>` : fmt(x.is.ret_mdd, 2)}</td>
       <td>${x.os.trades}</td><td>${fmt(x.os.pf, 2)}</td><td>${sgn(x.os.ret_pct, 2)}</td><td>${bO ? `<b>${fmt(x.os.ret_mdd, 2)}</b>` : fmt(x.os.ret_mdd, 2)}</td></tr>`;
   });
   p2.append(el("div", {className: "scroll"}, `<table>${t}</table>`));
+  p2.append(el("p", {className: "hint"}, `排序：${esc(META.rank_by[r.rank_by] || "")}。「鄰近最差」為負（黃字）代表旁邊一格就虧，是孤峰的訊號。`));
   p2.append(el("p", {className: "hint"}, "報酬／回撤加粗 = 贏過同期買進持有。"));
   out.append(p2);
   p2.querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => {
@@ -839,6 +952,8 @@ $("#runcmp").onclick = async () => {
 async function resumeJobs() {
   let list = [];
   try { list = await api("/api/jobs"); } catch (e) { return; }
+  const bt = list.find(j => j.kind === "batch");
+  if (bt) { initLS(); lsSources(); LSJOB = bt.id; if (bt.status === "running") $("#runls").disabled = true; pollLS(); }
   const dl = list.find(j => j.kind === "download" && j.status === "running");
   if (dl) { DLJOB = dl.id; $("#rundl").disabled = true; $("#stopdl").disabled = false; pollDl(); }
   const op = list.find(j => j.kind === "optimize");
