@@ -61,5 +61,5 @@ def full_report(req):
     return {"strategy": req["strategy"], "symbol": req["symbol"], "source": req.get("source", "duka"),
             "params": params, "align": req.get("align", "session"), "tz": inst(req["symbol"])["tz"],
             "summary": summ, "buy_hold": bh, "yearly": metrics.yearly(trades),
-            "equity": metrics.equity_series(daily), "trades": tl, "costs": res["costs"],
+            "equity": metrics.equity_series(daily), "equity_daily": metrics.equity_series(daily, max_points=10 ** 6), "trades": tl, "costs": res["costs"],
             "minutes": res["minutes"], "range": [metrics.tday_str(daily[0][0]), metrics.tday_str(daily[-1][0])] if daily else None}

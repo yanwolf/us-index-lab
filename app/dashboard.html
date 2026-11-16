@@ -124,7 +124,7 @@
     </div>
   </div>
   <div class="panel" id="histp" style="display:none">
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">回測紀錄</h2><button class="sec" id="histclr">清除</button></div>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">回測紀錄</h2><span><button class="act" id="allcsv" style="display:none"></button> <button class="sec" id="histclr">清除</button></span></div>
     <p class="hint">每次執行都記一列，點一列可以帶回當時的參數。存在這台裝置的瀏覽器裡。</p>
     <div class="scroll"><table id="hist"></table></div>
   </div>
@@ -367,6 +367,7 @@ async function runBacktest() {
     $("#btstat").textContent = `完成，${r.elapsed} 秒`;
     renderResult(r);
     addHist(r);
+    RESULTS.push(r); updateAllCsv();
   } catch (e) {
     $("#btstat").textContent = ""; $("#btout").innerHTML = `<div class="panel err">${esc(e.message)}</div>`;
   }
@@ -398,7 +399,9 @@ function renderResult(r) {
   p1.append(el("div", {className: "verdict"}, verdict(s, b)));
   const addBtn = el("button", {className: "sec", textContent: "加入組合", style: "margin-bottom:12px"});
   addBtn.onclick = () => { addLeg(r); addBtn.textContent = "已加入組合"; addBtn.disabled = true; };
-  p1.append(addBtn);
+  const csvBtn = el("button", {className: "sec", textContent: "下載 CSV", style: "margin:0 0 12px 8px"});
+  csvBtn.onclick = () => saveCsv(`backtest_${r.strategy}_${r.symbol}_${stamp()}.csv`, backtestCsv([r]));
+  p1.append(addBtn, csvBtn);
   const rows = [
     ["累積報酬（1 倍名目）", sgn(s.ret_pct, 2, "%"), sgn(b.ret_pct, 2, "%")],
     ["年化報酬", sgn(s.ann_pct, 2, "%"), sgn(b.ann_pct, 2, "%")],
@@ -742,6 +745,59 @@ $("#savePreset").onclick = async () => {
   await loadPresets(); $("#btstat").textContent = `已存「${name}」`;
 };
 
+// ---------------------------------------------------------------- CSV 匯出
+const csvCell = v => { if (v === null || v === undefined) return ""; if (typeof v === "object") v = JSON.stringify(v);
+  v = String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+function csvTable(title, rows) {
+  if (!rows.length) return "";
+  const cols = []; rows.forEach(r => Object.keys(r).forEach(k => cols.includes(k) || cols.push(k)));
+  return `## ${title}\n` + cols.map(csvCell).join(",") + "\n" + rows.map(r => cols.map(c => csvCell(r[c])).join(",")).join("\n") + "\n\n";
+}
+function flat(o, pre = "", out = {}) {
+  for (const [k, v] of Object.entries(o || {})) {
+    if (v && typeof v === "object" && !Array.isArray(v)) flat(v, pre + k + ".", out); else out[pre + k] = v;
+  }
+  return out;
+}
+function saveCsv(name, text) {
+  const a = el("a", {href: URL.createObjectURL(new Blob(["\ufeff" + text], {type: "text/csv;charset=utf-8"})), download: name});
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+function backtestCsv(list) {
+  const sum = [], yr = [], eq = [], tr = [];
+  list.forEach((r, i) => {
+    const run = i + 1;
+    sum.push({run, strategy: r.strategy, symbol: r.symbol, source: r.source, minutes: r.minutes, align: r.align,
+      from: (r.range || [])[0], to: (r.range || [])[1], params: r.params, costs: r.costs,
+      ...flat(r.summary), ...flat(r.buy_hold, "buy_hold.")});
+    (r.yearly || []).forEach(y => yr.push({run, ...y}));
+    (r.equity_daily || r.equity || []).forEach(e => eq.push({run, date: e[0], strat_pct: e[1], buyhold_pct: e[2], equity_pts: e[3]}));
+    (r.trades || []).forEach(t => tr.push({run, ...t}));
+  });
+  return csvTable("回測摘要（每次一列，run 對應下面各表）", sum) + csvTable("逐年", yr) +
+         csvTable("每日權益（策略累積%、買進持有累積%、策略累積點數）", eq) + csvTable("交易明細", tr);
+}
+function optCsv(r, req) {
+  const scal = {}, secs = [];
+  const walk = (o, pre) => {
+    for (const [k, v] of Object.entries(o || {})) {
+      if (Array.isArray(v) && v.length && v.every(x => x && typeof x === "object" && !Array.isArray(x))) secs.push([pre + k, v.map(x => flat(x))]);
+      else if (Array.isArray(v) && v.length && v.every(Array.isArray)) secs.push([pre + k, v.map(x => Object.fromEntries(x.map((c, j) => ["c" + j, c])))]);
+      else if (v && typeof v === "object" && !Array.isArray(v)) walk(v, pre + k + ".");
+      else scal[pre + k] = v;
+    }
+  };
+  walk(r, "");
+  return csvTable("掃描設定", [flat(req || {})]) + csvTable("摘要", [scal]) + secs.map(([k, rows]) => csvTable({rows: "參數組合（is = 樣本內、os = 樣本外）"}[k] || k, rows)).join("");
+}
+let RESULTS = [];   // 這次開頁後跑過的完整回測（只在記憶體，重新整理就清空）
+function updateAllCsv() {
+  const b = $("#allcsv"); b.style.display = RESULTS.length ? "" : "none";
+  b.textContent = `下載這次跑的 ${RESULTS.length} 筆回測（CSV）`;
+}
+$("#allcsv").onclick = () => saveCsv(`backtests_${RESULTS.length}runs_${stamp()}.csv`, backtestCsv(RESULTS));
+
 // ---------------------------------------------------------------- 一鍵範本
 function fillTemplates() {
   const sel = $("#tplSel"); sel.innerHTML = `<option value="">選擇範本…</option>`;
@@ -826,9 +882,11 @@ function countCombos() {
 let OPTJOB = null;
 $("#runopt").onclick = async () => {
   try {
-    const j = await api("/api/optimize", {method: "POST", body: {req: curReq(), grid: optGrid(), split: Number($("#split").value),
+    const body = {req: curReq(), grid: optGrid(), split: Number($("#split").value),
       objective: $("#objective").value, min_trades: Number($("#mintr").value), rank_by: $("#rankby").value,
-      wf_k: Number($("#wfk").value), wf_m: Number($("#wfm").value)}});
+      wf_k: Number($("#wfk").value), wf_m: Number($("#wfm").value)};
+    const j = await api("/api/optimize", {method: "POST", body});
+    OPTREQ = body;
     OPTJOB = j.id; $("#runopt").disabled = true; $("#stopopt").disabled = false; $("#optout").innerHTML = "";
     pollOpt();
   } catch (e) { $("#optstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
@@ -845,8 +903,13 @@ async function pollOpt(resumed) {
   $("#runopt").disabled = false; $("#stopopt").disabled = true;
   if (j.result) renderOpt(j.result);
 }
+let OPTREQ = null;
 function renderOpt(r) {
   const out = $("#optout"); out.innerHTML = "";
+  const req = OPTREQ || {req: curReq(), grid: optGrid()};
+  const ob = el("button", {className: "act", textContent: "下載掃描結果 CSV", style: "margin-bottom:12px"});
+  ob.onclick = () => saveCsv(`scan_${req.req.strategy}_${req.req.symbol}_${stamp()}.csv`, optCsv(r, req));
+  out.append(ob);
   const objName = META.objectives[r.objective];
   // ---- 穩健度
   const p0 = el("div", {className: "panel"});

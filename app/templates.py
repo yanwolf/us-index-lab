@@ -25,6 +25,14 @@ def templates():
            params={"LOSS": 2, "WIN": 9, "EBX": 2}),
         _t("① 先驗證：現有多方在 2021 起的表現", "那指多 AR_crossover（模擬倉 nas_arx）", "AR_crossover", "NAS100",
            note="2022 空頭是重點"),
+        _t("①b 多方補驗證", "日經多 台指參數 EBX=4（交接文件版）", "GuYuan_2024", "JP225", params={"EBX": 4},
+           note="模擬倉 jp_gy24 是 EBX=0，這組看 EBX=4 在 2021 起差多少"),
+        _t("①b 多方補驗證", "日經多 台指參數＋日線濾網 TF_N=200", "GuYuan_2024", "JP225", params={"TF_N": 200},
+           note="前一日收盤在 200 日均線之上才進場，看能不能少虧空頭段"),
+        _t("①b 多方補驗證", "那指多 AR_crossover＋日線濾網 TF_N=200", "AR_crossover", "NAS100", params={"TF_N": 200},
+           note="2022 空頭期間應該幾乎不進場"),
+        _t("①b 多方補驗證", "日經多 GuYuan_2025（20 分 K）", "GuYuan_2025", "JP225",
+           note="之前另一段期間報酬/回撤 1.63，用同一段 2021 起重跑才能比"),
     ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
