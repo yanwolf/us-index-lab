@@ -11,8 +11,8 @@ ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.
 TMFF_S_GRID = {"TF_N": [0, 200, 100], "SS": [0, 0.4, 0.1], "SLOSS": [0.6, 1.4, 0.2], "SWIN": [1.8, 3.8, 1]}  # 225 組
 
 
-def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None):
-    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=START, end=None, minutes=minutes,
+def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None):
+    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=START, end=None, minutes=minutes, costs=costs,
                 align="session", params=params or {}, grid=grid or {}, objective="ret_mdd", rank_by="plateau",
                 min_trades=20, wf_k=4, wf_m=2, split=0.67, note=note)
 
@@ -47,6 +47,16 @@ def templates():
         _t(g4, "日經 GuYuan_2024 改 120 分 K", "GuYuan_2024", "JP225", minutes=120, note="單位跟著 K 棒變大，交易數應該少一半左右"),
         _t(g4, "日經 GuYuan_2025 改 40 分 K", "GuYuan_2025", "JP225", minutes=40),
         _t(g4, "日經 GuYuan_2025 改 60 分 K", "GuYuan_2025", "JP225", minutes=60),
+    ]
+    g5 = "⑤ GuYuan_2025 候選確認（K 棒鄰近值、滑價加倍）"
+    out += [_t(g5, f"日經 GuYuan_2025 {m} 分 K", "GuYuan_2025", "JP225", minutes=m,
+               note="60 分 K 的 PF 1.32 是不是孤峰：看 50～120 分是否也不錯") for m in (50, 75, 90, 120)]
+    out += [_t(g5, f"那指 GuYuan_2025 {m} 分 K", "GuYuan_2025", "NAS100", minutes=m) for m in (30, 40, 60)]
+    out += [
+        _t(g5, "日經 GuYuan_2025 60 分 K｜滑價加倍（每邊 6 點）", "GuYuan_2025", "JP225", minutes=60, costs={"slippage": 6}),
+        _t(g5, "那指 GuYuan_2025 20 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", costs={"slippage": 1}),
+        _t(g5, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）逐年", "GuYuan_2024_S", "NAS100",
+           params=dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=100, EBX=2), note="空方掃描裡前後兩段都賺的區域，看 2022 年貢獻多少"),
     ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
