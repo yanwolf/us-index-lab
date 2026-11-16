@@ -58,6 +58,7 @@ def meta():
         "rank_by": optimize.RANK_BY,
         "ses_modes": {int(k): v for k, v in __import__("app.bars", fromlist=["SES_MODES"]).SES_MODES.items()},
         "txf_preset": TXF_PRESET,
+        "templates": __import__("app.templates", fromlist=["templates"]).templates(),
         "data": store.inventory(),
         "workers": optimize.WORKERS,
         "max_combos": optimize.MAX_COMBOS,

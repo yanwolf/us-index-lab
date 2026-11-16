@@ -84,6 +84,15 @@
 <!-- ============ 回測 ============ -->
 <section id="bt" class="on">
   <div class="panel">
+    <h2>一鍵範本</h2>
+    <div class="row">
+      <select id="tplSel" style="width:auto;min-width:240px;flex:1"></select>
+      <button class="sec" id="tplApply">套用</button>
+      <button class="act" id="tplRun">套用並執行</button>
+    </div>
+    <p class="hint" id="tplNote">選一個範本：資料、商品、策略、期間、成本、參數（掃描範本還有網格）會一次填好。單純回測的範本會留在這頁；掃描範本會跳到「最佳化」。</p>
+  </div>
+  <div class="panel">
     <div class="grid">
       <label>資料來源<select id="src"></select></label>
       <label>商品<select id="sym"></select></label>
@@ -293,6 +302,7 @@ async function loadMeta() {
   fillSel($("#rankby"), Object.entries(META.rank_by), true);
   renderInv();
   defaultDates();
+  if (!$("#tplSel").options.length) fillTemplates();
 }
 
 function defaultDates() {
@@ -730,6 +740,50 @@ $("#savePreset").onclick = async () => {
   const r = curReq();
   await api("/api/presets", {method: "POST", body: {name, strategy: r.strategy, symbol: r.symbol, minutes: r.minutes, align: r.align, params: r.params}});
   await loadPresets(); $("#btstat").textContent = `已存「${name}」`;
+};
+
+// ---------------------------------------------------------------- 一鍵範本
+function fillTemplates() {
+  const sel = $("#tplSel"); sel.innerHTML = `<option value="">選擇範本…</option>`;
+  const groups = {};
+  (META.templates || []).forEach((t, i) => {
+    if (!groups[t.group]) { groups[t.group] = el("optgroup", {label: t.group}); sel.append(groups[t.group]); }
+    groups[t.group].append(el("option", {value: i, textContent: t.name + (Object.keys(t.grid).length ? "（掃描）" : "")}));
+  });
+}
+$("#tplSel").onchange = () => {
+  const t = META.templates[$("#tplSel").value];
+  $("#tplNote").textContent = t ? `${t.strategy}／${t.symbol}／Dukascopy ${t.start} 起／成本用商品預設。${t.note || ""}` : "";
+};
+function applyTemplate() {
+  const t = META.templates[$("#tplSel").value];
+  if (!t) throw new Error("先選一個範本");
+  const d = META.data.find(x => x.source === t.source && x.symbol === t.symbol);
+  if (!d) throw new Error(`還沒有 ${t.source === "duka" ? "Dukascopy" : t.source} 的 ${t.symbol} 資料，先到「資料」頁下載`);
+  $("#src").value = t.source; $("#sym").value = t.symbol; setCosts(META.instruments[t.symbol].costs);
+  $("#strat").value = t.strategy; $("#align").value = t.align;
+  onStrat({params: t.params});
+  $("#start").value = t.start;
+  $("#end").value = t.end || new Date(d.last * 1000).toISOString().slice(0, 10);
+  $("#start").dataset.touched = 1;
+  const grid = t.grid || {};
+  if (!Object.keys(grid).length) return false;
+  buildOptGrid(true);
+  $("#optgrid").querySelectorAll(".optp").forEach(r => {
+    const cb = r.querySelector("input[type=checkbox]"); if (!cb) return;
+    const g = grid[cb.dataset.k]; cb.checked = !!g;
+    if (g) [...r.querySelectorAll("input[type=number]")].forEach((x, i) => x.value = g[i]);
+  });
+  $("#objective").value = t.objective; $("#rankby").value = t.rank_by;
+  $("#mintr").value = t.min_trades; $("#wfk").value = t.wf_k; $("#wfm").value = t.wf_m; $("#split").value = t.split;
+  countCombos();
+  document.querySelector('#nav button[data-t="opt"]').click();
+  return true;
+}
+$("#tplApply").onclick = () => { try { applyTemplate(); $("#btstat").textContent = "已套用範本"; } catch (e) { alert(e.message); } };
+$("#tplRun").onclick = () => {
+  let scan; try { scan = applyTemplate(); } catch (e) { return alert(e.message); }
+  if (scan) $("#runopt").click(); else runBacktest();
 };
 
 // ---------------------------------------------------------------- 最佳化

@@ -54,6 +54,39 @@ class TMFF(Strategy):
                 self.buytocover_stop(ep - self.maxprofit + self.U(p["STB"]), "移動停利")
 
 
+class TMFFShort(Strategy):
+    """TMFF 只留空方那一半：日線三段連跌（closeD 1<2、3<4、5<6）且收盤跌破 MA(N)−AvgRange(200)×SS，
+    SwingLow stop 放空。出場照 TMFF 空單（停損、停利、移動停利）。多了 TF_N 日線趨勢濾網，預設 0 = 關閉。"""
+    name = "TMFF_S"
+    desc = "只做空（TMFF 空方拆出）。日線三段連跌且收盤跌破 MA(N)−AvgRange(200)×SS，SwingLow stop 放空"
+    minutes = 60
+    inputs = dict(N=30, SS=0.1, SWing=1, SLOSS=0.8, SWIN=2.8, SMax=1.1, STB=1.7, TF_N=0)
+    doc = dict(N="均線期數", SS="空方過濾：AvgRange(200) 的倍數", SWing="SwingLow 左右各幾根",
+               SLOSS="空單停損（單位）", SWIN="空單停利（單位）", SMax="啟動移動停利的浮盈（單位）",
+               STB="移動停利回吐（單位）", TF_N="日線趨勢濾網：前一日收盤在 N 日均線之下才放空，0 = 關閉")
+
+    def __init__(self, params=None):
+        super().__init__(params)
+        self.BS = 0
+
+    def on_bar(self):
+        p = self.p
+        if self.closeD(1) > self.closeD(2) and self.closeD(3) > self.closeD(4) and self.closeD(5) > self.closeD(6):
+            self.BS = 1
+        if self.closeD(1) < self.closeD(2) and self.closeD(3) < self.closeD(4) and self.closeD(5) < self.closeD(6):
+            self.BS = -1
+        ma = self.avg("C", p["N"])
+        ar = self.avgrange(200)
+        if self.mp != -1 and self.C() < ma - ar * p["SS"] and self.BS == -1 and self.trend_ok(p["TF_N"], -1):
+            self.sellshort_stop(self.swinglow(p["SWing"], 200), "SwingLow 跌破")
+        if self.mp < 0:
+            ep = self.entryprice
+            self.buytocover_stop(ep + self.U(p["SLOSS"]), "停損")
+            self.buytocover_limit(ep - self.U(p["SWIN"]), "停利")
+            if self.maxprofit >= self.U(p["SMax"]):
+                self.buytocover_stop(ep - self.maxprofit + self.U(p["STB"]), "移動停利")
+
+
 class ARCrossover(Strategy):
     name = "AR_crossover"
     desc = "只做多。最高價上穿 MA(H)+AvgRange×倍數 市價進場，每日最多 ETD 次"
@@ -196,4 +229,4 @@ class GuYuan2025(Strategy):
             self.sell_limit(ep + self.U(p["WIN"]), "停利")
 
 
-REGISTRY = {c.name: c for c in (TMFF, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025)}
+REGISTRY = {c.name: c for c in (TMFF, TMFFShort, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025)}
