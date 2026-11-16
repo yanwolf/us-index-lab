@@ -816,6 +816,8 @@ function applyTemplate() {
   if (!t) throw new Error("先選一個範本");
   const d = META.data.find(x => x.source === t.source && x.symbol === t.symbol);
   if (!d) throw new Error(`還沒有 ${t.source === "duka" ? "Dukascopy" : t.source} 的 ${t.symbol} 資料，先到「資料」頁下載`);
+  if (Date.parse(t.start) / 1000 < d.first + 25 * 86400)
+    throw new Error(`${t.symbol} 的 Dukascopy 資料從 ${new Date(d.first * 1000).toISOString().slice(0, 10)} 開始，這個範本要從 ${t.start} 起算（還要多一個月暖機）。先到「資料」頁，「或指定開始」填 ${new Date(Date.parse(t.start) - 32 * 86400000).toISOString().slice(0, 10)} 補下載，已經有的日子會自動跳過。`);
   $("#src").value = t.source; $("#sym").value = t.symbol; setCosts(META.instruments[t.symbol].costs); if (t.costs) setCosts(t.costs);
   $("#strat").value = t.strategy; $("#align").value = t.align;
   onStrat({minutes: t.minutes, params: t.params});

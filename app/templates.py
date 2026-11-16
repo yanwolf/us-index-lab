@@ -11,8 +11,8 @@ ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.
 TMFF_S_GRID = {"TF_N": [0, 200, 100], "SS": [0, 0.4, 0.1], "SLOSS": [0.6, 1.4, 0.2], "SWIN": [1.8, 3.8, 1]}  # 225 組
 
 
-def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None):
-    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=START, end=None, minutes=minutes, costs=costs,
+def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None, start=START, end=None):
+    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=start, end=end, minutes=minutes, costs=costs,
                 align="session", params=params or {}, grid=grid or {}, objective="ret_mdd", rank_by="plateau",
                 min_trades=20, wf_k=4, wf_m=2, split=0.67, note=note)
 
@@ -57,6 +57,23 @@ def templates():
         _t(g5, "那指 GuYuan_2025 20 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", costs={"slippage": 1}),
         _t(g5, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）逐年", "GuYuan_2024_S", "NAS100",
            params=dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=100, EBX=2), note="空方掃描裡前後兩段都賺的區域，看 2022 年貢獻多少"),
+    ]
+    S_PARAMS = dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=100, EBX=2)
+    g6 = "⑥ 新組合的鄰近值檢查"
+    out += [_t(g6, f"那指 GuYuan_2025 {m} 分 K", "GuYuan_2025", "NAS100", minutes=m,
+               note="20→30→40→60 分一路變好，看 60 分之後是平台還是掉下去") for m in (75, 90, 120)]
+    out += [
+        _t(g6, "那指 GuYuan_2024_S 鄰近參數掃描（WIN × MA2 × EBX）", "GuYuan_2024_S", "NAS100", params=S_PARAMS,
+           grid={"WIN": [1.5, 2.5, 0.5], "MA2": [50, 150, 50], "EBX": [1, 3, 1]}, note="27 組，看 WIN 2／MA2 100／EBX 2 旁邊是不是也賺"),
+        _t(g6, "那指 GuYuan_2024_S｜滑價加倍（每邊 1 點）", "GuYuan_2024_S", "NAS100", params=S_PARAMS, costs={"slippage": 1}),
+        _t(g6, "那指 GuYuan_2025 60 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", minutes=60, costs={"slippage": 1}),
+    ]
+    g7 = "⑦ 真正的樣本外：2018–2020（要先在「資料」頁補下載，開始日填 2017-12-01）"
+    OS = dict(start="2018-01-02", end="2020-12-31")
+    out += [
+        _t(g7, "日經 GuYuan_2025 20 分 K｜2018–2020", "GuYuan_2025", "JP225", **OS, note="這段資料完全沒參與挑選，含 2018 Q4 下跌、2020 疫情崩跌"),
+        _t(g7, "那指 GuYuan_2025 60 分 K｜2018–2020", "GuYuan_2025", "NAS100", minutes=60, **OS),
+        _t(g7, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）｜2018–2020", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **OS),
     ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
