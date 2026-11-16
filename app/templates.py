@@ -11,8 +11,8 @@ ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.
 TMFF_S_GRID = {"TF_N": [0, 200, 100], "SS": [0, 0.4, 0.1], "SLOSS": [0.6, 1.4, 0.2], "SWIN": [1.8, 3.8, 1]}  # 225 組
 
 
-def _t(group, name, strategy, symbol, params=None, grid=None, note=""):
-    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=START, end=None,
+def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None):
+    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=START, end=None, minutes=minutes,
                 align="session", params=params or {}, grid=grid or {}, objective="ret_mdd", rank_by="plateau",
                 min_trades=20, wf_k=4, wf_m=2, split=0.67, note=note)
 
@@ -33,6 +33,20 @@ def templates():
            note="2022 空頭期間應該幾乎不進場"),
         _t("①b 多方補驗證", "日經多 GuYuan_2025（20 分 K）", "GuYuan_2025", "JP225",
            note="之前另一段期間報酬/回撤 1.63，用同一段 2021 起重跑才能比"),
+    ]
+    g3 = "③ GuYuan_2025（目前最好的一支）"
+    out += [
+        _t(g3, "日經 GuYuan_2025 掃描（HN × LOSS × WIN）", "GuYuan_2025", "JP225",
+           grid={"HN": [15, 35, 5], "LOSS": [0.6, 1.4, 0.2], "WIN": [4.2, 8.2, 1]}, note="125 組，MA1/MA2/ETD 維持原值"),
+        _t(g3, "那指 GuYuan_2025（預設）", "GuYuan_2025", "NAS100", note="看能不能用在別的指數"),
+        _t(g3, "標普 GuYuan_2025（預設）", "GuYuan_2025", "US500"),
+        _t(g3, "恆指 GuYuan_2025（預設）", "GuYuan_2025", "HK50"),
+    ]
+    g4 = "④ 降低交易頻率（成本吃掉六成毛利）"
+    out += [
+        _t(g4, "日經 GuYuan_2024 改 120 分 K", "GuYuan_2024", "JP225", minutes=120, note="單位跟著 K 棒變大，交易數應該少一半左右"),
+        _t(g4, "日經 GuYuan_2025 改 40 分 K", "GuYuan_2025", "JP225", minutes=40),
+        _t(g4, "日經 GuYuan_2025 改 60 分 K", "GuYuan_2025", "JP225", minutes=60),
     ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]

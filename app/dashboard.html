@@ -818,7 +818,7 @@ function applyTemplate() {
   if (!d) throw new Error(`還沒有 ${t.source === "duka" ? "Dukascopy" : t.source} 的 ${t.symbol} 資料，先到「資料」頁下載`);
   $("#src").value = t.source; $("#sym").value = t.symbol; setCosts(META.instruments[t.symbol].costs);
   $("#strat").value = t.strategy; $("#align").value = t.align;
-  onStrat({params: t.params});
+  onStrat({minutes: t.minutes, params: t.params});
   $("#start").value = t.start;
   $("#end").value = t.end || new Date(d.last * 1000).toISOString().slice(0, 10);
   $("#start").dataset.touched = 1;
