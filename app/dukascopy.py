@@ -156,6 +156,25 @@ def to_frame(day, rows, fmt):
     return df[keep]
 
 
+def _empty_path(symbol):
+    return os.path.join(store.DATA_DIR, "duka", symbol, "empty_days.json")
+
+
+def load_empty(symbol):
+    """Dukascopy 確認沒有資料的日子（404、空檔、只有休市平盤 K）。記下來，下次不再重抓。"""
+    try:
+        with open(_empty_path(symbol)) as fh:
+            return set(json.load(fh))
+    except Exception:
+        return set()
+
+
+def save_empty(symbol, days):
+    os.makedirs(os.path.dirname(_empty_path(symbol)), exist_ok=True)
+    with open(_empty_path(symbol), "w") as fh:
+        json.dump(sorted(days), fh)
+
+
 def _fmt_path(symbol):
     return os.path.join(store.DATA_DIR, "duka", symbol, "format.json")
 
@@ -187,11 +206,17 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
         d += timedelta(days=1)
     have = {}
     todo = []
+    empty = load_empty(symbol)
+    skipped_empty = 0
     for d in days:
         ym = d.strftime("%Y-%m")
         if ym not in have:
             have[ym] = store.days_present("duka", symbol, ym)
-        if d.isoformat() in have[ym] and (today - d).days > refresh_days:
+        old = (today - d).days > refresh_days
+        if d.isoformat() in have[ym] and old:
+            continue
+        if d.isoformat() in empty and (today - d).days > 7:
+            skipped_empty += 1
             continue
         todo.append(d)
 
@@ -209,6 +234,7 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
         log.append(f"格式判斷：價格倍率 ÷{fmt['div']}、開收欄位 {fmt['oc']}")
 
     total, done, saved, failed = len(todo), 0, 0, []
+    new_empty, got_days = set(), []
     buf = []
     lock = threading.Lock()
 
@@ -221,7 +247,7 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
 
     def work(day):
         if stop_flag and stop_flag() or tripped[0]:
-            return day, None
+            return day, "skip"
         time.sleep(DELAY)
         return day, to_frame(day, parse(fetch_raw(code, day, retries=3)), fmt)
 
@@ -242,9 +268,14 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
             try:
                 day, df = f.result()
                 consec = 0
-                if df is not None and len(df):
+                if isinstance(df, str):           # 被停止或熔斷，沒有真的抓
+                    pass
+                elif df is not None and len(df):
                     with lock:
                         buf.append(df)
+                    got_days.append(day)
+                else:                             # 404、空檔、只有休市平盤 K
+                    new_empty.add(day.isoformat())
             except Exception as e:
                 failed.append(str(e))
                 consec += 1
@@ -256,7 +287,15 @@ def download(symbol, start, end, progress=None, stop_flag=None, refresh_days=3):
             if progress:
                 progress(done, total)
     flush()
+    if new_empty:
+        save_empty(symbol, empty | new_empty)
     log.append(f"處理 {done}／{total} 天，寫入 {saved:,} 根 1 分 K" + (f"，失敗 {len(failed)} 天" if failed else ""))
+    if new_empty or skipped_empty:
+        log.append(f"Dukascopy 沒有資料的日子：這次新發現 {len(new_empty)} 天、之前記過跳過 {skipped_empty} 天（假日或 Dukascopy 沒提供，不算失敗，下次不再重抓）")
+    allempty = sorted(empty | new_empty)
+    first = store.first_day("duka", symbol)
+    if first and allempty and allempty[0] < first:
+        log.append(f"這個商品 Dukascopy 最早有資料的日子是 {first}，更早的日子 Dukascopy 沒有提供")
     if tripped[0]:
         log.append(f"連續 {MAX_CONSEC_FAIL} 天下載失敗，已自動停止：多半是 Dukascopy 暫時限流了你的伺服器 IP，"
                    "建議隔幾個小時再按一次（已抓到的會保留，會從缺的地方接著抓）")

@@ -65,6 +65,8 @@ def templates():
     out += [
         _t(g6, "那指 GuYuan_2024_S 鄰近參數掃描（WIN × MA2 × EBX）", "GuYuan_2024_S", "NAS100", params=S_PARAMS,
            grid={"WIN": [1.5, 2.5, 0.5], "MA2": [50, 150, 50], "EBX": [1, 3, 1]}, note="27 組，看 WIN 2／MA2 100／EBX 2 旁邊是不是也賺"),
+        _t(g6, "那指 GuYuan_2024_S 細掃 WIN 1.6～2.4", "GuYuan_2024_S", "NAS100", params=S_PARAMS,
+           grid={"WIN": [1.6, 2.4, 0.1]}, note="WIN 1.5 打平、2 賺、2.5 樣本外虧：看 2 是尖峰還是一段平緩的山丘"),
         _t(g6, "那指 GuYuan_2024_S｜滑價加倍（每邊 1 點）", "GuYuan_2024_S", "NAS100", params=S_PARAMS, costs={"slippage": 1}),
         _t(g6, "那指 GuYuan_2025 60 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", minutes=60, costs={"slippage": 1}),
     ]

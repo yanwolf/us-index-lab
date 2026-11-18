@@ -1017,7 +1017,7 @@ async function pollDl() {
   }
   $("#rundl").disabled = false; $("#stopdl").disabled = true;
   if (j.status === "error") $("#dlstat").innerHTML = `<span class="err">${esc(j.error)}</span>`;
-  else $("#dlstat").innerHTML = `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span> ` + (j.result ? j.result.log.join("；") + (j.result.failed.length ? `<br><span class="err">${j.result.failed.slice(0, 3).map(esc).join("<br>")}</span>` : "") : "");
+  else $("#dlstat").innerHTML = `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span> ` + (j.result ? j.result.log.map(esc).join("<br>") + (j.result.failed.length ? `<br><span class="err">${j.result.failed.slice(0, 3).map(esc).join("<br>")}</span>` : "") : "");
   loadMeta();
 }
 $("#testdl").onclick = async () => {

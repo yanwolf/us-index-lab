@@ -80,6 +80,18 @@ def has_month(source, symbol, ym, min_rows=1):
         return False
 
 
+def first_day(source, symbol):
+    """最早一個有資料的 UTC 日期字串"""
+    d = _dir(source, symbol)
+    if not os.path.isdir(d):
+        return None
+    for f in sorted(x for x in os.listdir(d) if x.endswith(".parquet")):
+        t = pd.read_parquet(os.path.join(d, f), columns=["ts"])["ts"]
+        if len(t):
+            return pd.to_datetime(int(t.min()), unit="s", utc=True).strftime("%Y-%m-%d")
+    return None
+
+
 def days_present(source, symbol, ym):
     """該月已有資料的 UTC 日期集合（下載器用來跳過已抓過的日子）。"""
     p = os.path.join(_dir(source, symbol), f"{ym}.parquet")
