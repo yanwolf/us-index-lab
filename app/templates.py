@@ -84,6 +84,15 @@ def templates():
         _t(g7b, "那指 GuYuan_2025 60 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "NAS100", minutes=60, **PS),
         _t(g7b, "那指 GuYuan_2024_S｜2018–2020｜Pepperstone", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PS),
     ]
+    g7c = "⑦c 那指更長的樣本外 2013–2020（Pepperstone，先看「資料」頁的完整度）"
+    PL = dict(start="2013-01-02", end="2020-12-31", source="mt5-pepperstone")
+    out += [
+        _t(g7c, "那指 GuYuan_2025 60 分 K｜2013–2020", "GuYuan_2025", "NAS100", minutes=60, **PL,
+           note="含 2015–16 修正、2018 Q4、2020 崩跌"),
+        _t(g7c, "那指 GuYuan_2024_S｜2013–2020", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PL),
+        _t(g7c, "標普 GuYuan_2025 60 分 K｜2013–2020", "GuYuan_2025", "US500", minutes=60, **PL,
+           note="標普 20 分 K 不行，順便看 60 分 K"),
+    ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"

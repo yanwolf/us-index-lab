@@ -119,6 +119,27 @@ def inventory():
     return out
 
 
+def coverage(source, symbol):
+    """逐年的資料完整度：有資料的天數、1 分 K 數、每天 K 數中位數、K 數不到典型一半的天數"""
+    d = _dir(source, symbol)
+    if not os.path.isdir(d):
+        raise FileNotFoundError(f"沒有 {source}/{symbol} 的資料")
+    per_day = []
+    for f in sorted(x for x in os.listdir(d) if x.endswith(".parquet")):
+        t = pd.read_parquet(os.path.join(d, f), columns=["ts"])["ts"]
+        per_day.append(pd.to_datetime(t, unit="s", utc=True).dt.strftime("%Y-%m-%d").value_counts())
+    if not per_day:
+        return []
+    c = pd.concat(per_day).groupby(level=0).sum().sort_index()
+    c = c[pd.to_datetime(c.index).dayofweek < 5]            # 只看平日
+    typical = float(c.tail(250).median())                  # 最近一年的典型每天 K 數當基準
+    out = []
+    for y, g in c.groupby(c.index.str[:4]):
+        out.append({"year": int(y), "days": int(len(g)), "bars": int(g.sum()), "median_per_day": int(g.median()),
+                    "thin_days": int((g < typical * 0.5).sum()), "pct_of_typical": round(float(g.median()) / typical * 100) if typical else None})
+    return out
+
+
 def load(source, symbol):
     """整份讀進記憶體（3 年約 110 萬列、50MB 左右），快取起來給回測與最佳化重複用。"""
     key = (source, symbol)

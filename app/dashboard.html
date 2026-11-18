@@ -162,6 +162,7 @@
   <div class="panel">
     <h2>已下載的資料</h2>
     <div class="scroll"><table id="inv"></table></div>
+    <div id="cov" style="display:none;margin-top:14px"></div>
   </div>
   <div class="panel">
     <h2>從 Dukascopy 下載 1 分 K</h2>
@@ -994,12 +995,25 @@ function renderInv() {
   const d = ts => ts ? new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ") : "–";
   let h = `<tr><th class="l">來源</th><th class="l">商品</th><th>1 分 K 數</th><th class="l">第一筆（UTC）</th><th class="l">最後一筆（UTC）</th><th>年數</th><th></th></tr>`;
   META.data.forEach(x => h += `<tr><td class="l">${x.source === "duka" ? "Dukascopy" : x.source}</td><td class="l">${x.symbol}</td><td>${x.rows.toLocaleString()}</td><td class="l">${d(x.first)}</td><td class="l">${d(x.last)}</td><td>${fmt((x.last - x.first) / 31557600, 2)}</td>
-    <td><button class="danger" data-s="${x.source}" data-y="${x.symbol}">刪除</button></td></tr>`);
+    <td style="white-space:nowrap"><button class="sec" data-cs="${x.source}" data-cy="${x.symbol}">完整度</button> <button class="danger" data-s="${x.source}" data-y="${x.symbol}">刪除</button></td></tr>`);
   t.innerHTML = h;
+  t.querySelectorAll("button[data-cs]").forEach(b => b.onclick = () => showCoverage(b.dataset.cs, b.dataset.cy));
   t.querySelectorAll("button.danger").forEach(b => b.onclick = async () => {
     if (!confirm(`刪除 ${b.dataset.s}/${b.dataset.y} 的所有資料？`)) return;
     await api("/api/delete_data", {method: "POST", body: {source: b.dataset.s, symbol: b.dataset.y}}); loadMeta();
   });
+}
+async function showCoverage(source, symbol) {
+  const box = $("#cov"); box.style.display = ""; box.innerHTML = `<span class="dimc">計算 ${esc(source)}／${esc(symbol)} 的資料完整度…</span>`;
+  try {
+    const rows = await api(`/api/coverage?source=${encodeURIComponent(source)}&symbol=${encodeURIComponent(symbol)}`);
+    box.innerHTML = `<h2 style="margin:0 0 6px">${source === "duka" ? "Dukascopy" : esc(source)}／${esc(symbol)} 逐年資料完整度</h2>
+      <p class="hint">「每天 K 數」是平日的中位數；「佔典型」是跟最近一年比。低於 80% 或稀疏天數很多的年份，回測結果要打折（可能只有部分時段或有缺口）。</p>
+      <div class="scroll"><table><tr><th class="l">年</th><th>有資料天數</th><th>1 分 K 數</th><th>每天 K 數</th><th>佔典型</th><th>稀疏天數</th></tr>` +
+      rows.map(r => `<tr><td class="l">${r.year}</td><td>${r.days}</td><td>${r.bars.toLocaleString()}</td><td>${r.median_per_day}</td>
+        <td class="${r.pct_of_typical < 80 ? "warn" : ""}">${r.pct_of_typical}%</td><td class="${r.thin_days > 20 ? "warn" : ""}">${r.thin_days}</td></tr>`).join("") + `</table></div>`;
+    box.scrollIntoView({behavior: "smooth", block: "nearest"});
+  } catch (e) { box.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 let DLJOB = null;
 $("#rundl").onclick = async () => {

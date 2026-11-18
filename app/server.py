@@ -81,6 +81,14 @@ async def download(body: dict):
     return jobs.public(job)
 
 
+@app.get("/api/coverage")
+async def coverage(source: str, symbol: str):
+    try:
+        return await run_in_threadpool(store.coverage, source, symbol)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/duka_test")
 async def duka_test(symbol: str = "US500"):
     return await run_in_threadpool(dukascopy.diagnose, symbol)
