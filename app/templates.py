@@ -106,6 +106,17 @@ def templates():
                    note=f"看結果的「滾動驗證」那段：k={k}、m={m}，每段約 {8.9 / (k + m):.1f} 年，用前 {8.9 * m / (k + m):.1f} 年挑參數")
             t.update(wf_k=k, wf_m=m)
             out.append(t)
+    # ⑨ 那指 GY25 擴大範圍：⑧ 每次都挑到 HN 35／LOSS 0.8，剛好在邊界上
+    g9 = "⑨ 那指 GY25 60 分：擴大掃描範圍（HN 25～55 × LOSS 0.5～1.1 × WIN 4.2～10.2，80 組）"
+    G9 = {"HN": [25, 55, 10], "LOSS": [0.5, 1.1, 0.15], "WIN": [4.2, 10.2, 2]}
+    for wl, k, m in (("每 2 年重挑", 3, 1), ("每年重挑", 7, 2)):
+        t = _t(g9, f"那指 GY25 60 分｜擴大範圍｜{wl}", "GuYuan_2025", "NAS100", minutes=60, grid=G9, **P8,
+               note="看滾動驗證每段挑到的參數是不是穩定落在同一區，以及平台是否還在邊界上")
+        t.update(wf_k=k, wf_m=m)
+        out.append(t)
+    out.append(_t(g9, "那指 GY25 60 分｜擴大範圍｜Dukascopy 2018 起（換資料來源對照）", "GuYuan_2025", "NAS100",
+                  minutes=60, grid=G9, start="2018-01-02", note="同一組掃描換 Dukascopy 跑，平台位置應該差不多"))
+    out[-1].update(wf_k=3, wf_m=1)
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"
