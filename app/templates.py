@@ -11,8 +11,8 @@ ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.
 TMFF_S_GRID = {"TF_N": [0, 200, 100], "SS": [0, 0.4, 0.1], "SLOSS": [0.6, 1.4, 0.2], "SWIN": [1.8, 3.8, 1]}  # 225 組
 
 
-def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None, start=START, end=None):
-    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source="duka", start=start, end=end, minutes=minutes, costs=costs,
+def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None, start=START, end=None, source="duka"):
+    return dict(group=group, name=name, strategy=strategy, symbol=symbol, source=source, start=start, end=end, minutes=minutes, costs=costs,
                 align="session", params=params or {}, grid=grid or {}, objective="ret_mdd", rank_by="plateau",
                 min_trades=20, wf_k=4, wf_m=2, split=0.67, note=note)
 
@@ -76,6 +76,13 @@ def templates():
         _t(g7, "日經 GuYuan_2025 20 分 K｜2018–2020", "GuYuan_2025", "JP225", **OS, note="這段資料完全沒參與挑選，含 2018 Q4 下跌、2020 疫情崩跌"),
         _t(g7, "那指 GuYuan_2025 60 分 K｜2018–2020", "GuYuan_2025", "NAS100", minutes=60, **OS),
         _t(g7, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）｜2018–2020", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **OS),
+    ]
+    g7b = "⑦b 同樣的樣本外，改用 Pepperstone MT5 補抓的資料（get_history.cmd）"
+    PS = dict(OS, source="mt5-pepperstone")
+    out += [
+        _t(g7b, "日經 GuYuan_2025 20 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "JP225", **PS),
+        _t(g7b, "那指 GuYuan_2025 60 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "NAS100", minutes=60, **PS),
+        _t(g7b, "那指 GuYuan_2024_S｜2018–2020｜Pepperstone", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PS),
     ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]

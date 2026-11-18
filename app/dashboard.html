@@ -182,7 +182,7 @@
     <div class="grid" style="margin-top:8px">
       <label>券商名稱<input id="ibroker" placeholder="例如 pepperstone"></label>
       <label>對應商品<select id="isym"></select></label>
-      <label>CSV 檔<input id="ifile" type="file" accept=".csv"></label>
+      <label>CSV 檔<input id="ifile" type="file" accept=".csv,.gz,.zip"></label>
     </div>
     <div class="row" style="margin-top:10px"><button class="act" id="runimp">匯入</button><span id="impstat" class="dimc"></span></div>
   </div>
@@ -817,7 +817,9 @@ function applyTemplate() {
   const d = META.data.find(x => x.source === t.source && x.symbol === t.symbol);
   if (!d) throw new Error(`還沒有 ${t.source === "duka" ? "Dukascopy" : t.source} 的 ${t.symbol} 資料，先到「資料」頁下載`);
   if (Date.parse(t.start) / 1000 < d.first + 25 * 86400)
-    throw new Error(`${t.symbol} 的 Dukascopy 資料從 ${new Date(d.first * 1000).toISOString().slice(0, 10)} 開始，這個範本要從 ${t.start} 起算（還要多一個月暖機）。先到「資料」頁，「或指定開始」填 ${new Date(Date.parse(t.start) - 32 * 86400000).toISOString().slice(0, 10)} 補下載，已經有的日子會自動跳過。`);
+    throw new Error(`${t.symbol} 的${t.source === "duka" ? " Dukascopy" : " " + t.source} 資料從 ${new Date(d.first * 1000).toISOString().slice(0, 10)} 開始，這個範本要從 ${t.start} 起算（還要多一個月暖機）。` +
+      (t.source === "duka" ? `先到「資料」頁，「或指定開始」填 ${new Date(Date.parse(t.start) - 32 * 86400000).toISOString().slice(0, 10)} 補下載，已經有的日子會自動跳過。`
+                           : `先在電腦跑 mt5probe 裡的 get_history.cmd 補抓更早的資料，再到「資料」頁匯入。`));
   $("#src").value = t.source; $("#sym").value = t.symbol; setCosts(META.instruments[t.symbol].costs); if (t.costs) setCosts(t.costs);
   $("#strat").value = t.strategy; $("#align").value = t.align;
   onStrat({minutes: t.minutes, params: t.params});

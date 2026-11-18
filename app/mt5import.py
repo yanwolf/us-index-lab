@@ -12,6 +12,14 @@ from .instruments import inst, hm2min
 
 
 def import_csv(raw_bytes, broker, symbol):
+    if raw_bytes[:2] == b"\x1f\x8b":                      # .csv.gz
+        import gzip
+        raw_bytes = gzip.decompress(raw_bytes)
+    elif raw_bytes[:2] == b"PK":                           # .zip（裡面第一個 csv）
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+            name = next(n for n in z.namelist() if n.lower().endswith(".csv"))
+            raw_bytes = z.read(name)
     df = pd.read_csv(io.BytesIO(raw_bytes))
     need = {"time_utc", "open", "high", "low", "close"}
     if not need.issubset(df.columns):
