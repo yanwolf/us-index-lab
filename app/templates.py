@@ -84,15 +84,28 @@ def templates():
         _t(g7b, "那指 GuYuan_2025 60 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "NAS100", minutes=60, **PS),
         _t(g7b, "那指 GuYuan_2024_S｜2018–2020｜Pepperstone", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PS),
     ]
-    g7c = "⑦c 那指更長的樣本外 2013–2020（Pepperstone，先看「資料」頁的完整度）"
-    PL = dict(start="2013-01-02", end="2020-12-31", source="mt5-pepperstone")
+    g7c = "⑦c 那指更早的樣本外 2013–2017（Dukascopy；先下載那指、開始日填 2012-12-01，再看完整度）"
+    PL = dict(start="2013-01-02", end="2017-11-30", source="duka")
     out += [
-        _t(g7c, "那指 GuYuan_2025 60 分 K｜2013–2020", "GuYuan_2025", "NAS100", minutes=60, **PL,
-           note="含 2015–16 修正、2018 Q4、2020 崩跌"),
-        _t(g7c, "那指 GuYuan_2024_S｜2013–2020", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PL),
-        _t(g7c, "標普 GuYuan_2025 60 分 K｜2013–2020", "GuYuan_2025", "US500", minutes=60, **PL,
-           note="標普 20 分 K 不行，順便看 60 分 K"),
+        _t(g7c, "那指 GuYuan_2025 60 分 K｜2013–2017", "GuYuan_2025", "NAS100", minutes=60, **PL,
+           note="含 2015 年 8 月、2016 年初的修正"),
+        _t(g7c, "那指 GuYuan_2024_S｜2013–2017", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PL),
     ]
+    # ⑧ 調參頻率比較：同一段 2020→今天的測試期，比較「固定參數」和「每 2 年／每年／每半年用前 2 年重新挑參數」
+    g8 = "⑧ 調參頻率比較（Pepperstone 2018 起；測試期都是 2020 起）"
+    P8 = dict(start="2018-01-02", source="mt5-pepperstone")
+    WF = (("每 2 年重挑", 3, 1), ("每年重挑", 7, 2), ("每半年重挑", 14, 4))
+    for label, strat, sym, mins, base, grid in (
+            ("那指 GY25 60 分", "GuYuan_2025", "NAS100", 60, {}, {"HN": [15, 35, 10], "LOSS": [0.8, 1.4, 0.3], "WIN": [4.2, 8.2, 2]}),
+            ("那指 GY24_S", "GuYuan_2024_S", "NAS100", 60, S_PARAMS, {"WIN": [1.5, 2.5, 0.5], "MA2": [50, 150, 50], "EBX": [1, 3, 1]}),
+            ("日經 GY25 20 分", "GuYuan_2025", "JP225", 20, {}, {"HN": [15, 35, 10], "LOSS": [0.8, 1.4, 0.3], "WIN": [4.2, 8.2, 2]})):
+        out.append(_t(g8, f"{label}｜固定參數（不調）2020 起", strat, sym, minutes=mins, params=base, start="2020-01-02",
+                      source="mt5-pepperstone", note="對照組：一開始的參數一路用到底"))
+        for wl, k, m in WF:
+            t = _t(g8, f"{label}｜{wl}（滾動驗證）", strat, sym, minutes=mins, params=base, grid=grid, **P8,
+                   note=f"看結果的「滾動驗證」那段：k={k}、m={m}，每段約 {8.9 / (k + m):.1f} 年，用前 {8.9 * m / (k + m):.1f} 年挑參數")
+            t.update(wf_k=k, wf_m=m)
+            out.append(t)
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"
