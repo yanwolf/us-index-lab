@@ -78,6 +78,7 @@
   <button data-t="pf">組合</button>
   <button data-t="ls">多空批次</button>
   <button data-t="cmp">資料比對</button>
+  <button data-t="bot">抄底訊號</button>
 </nav>
 <main>
 
@@ -251,6 +252,36 @@
   </div>
   <div id="cmpout"></div>
 </section>
+<!-- ============ 抄底訊號 ============ -->
+<section id="bot">
+  <div class="panel">
+    <h2>現在的狀態</h2>
+    <div class="scroll"><table id="botnow"></table></div>
+    <p class="hint">每個指標最後一筆資料的日期不同（例如恐懼貪婪每天更新、P/C 晚一天），看日期欄。</p>
+  </div>
+  <div class="panel">
+    <h2>資料</h2>
+    <div class="scroll"><table id="botinv"></table></div>
+    <div class="row" style="margin-top:10px">
+      <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="botbreadth" checked style="width:auto">含成分股（算 S5FI／NDFI）</label>
+    </div>
+    <p class="hint">第一次含成分股要抓約 800 檔股票＋2019 年後每天的 P/C，大約 15–30 分鐘；之後再按只補新資料，幾分鐘。可以關掉頁面，回來會接上進度。</p>
+    <div class="row" style="margin-top:8px"><button class="act" id="botcol">收集／更新資料</button><span id="botcolstat" class="dimc"></span></div>
+    <div class="bar"><i id="botbar"></i></div>
+    <details><summary>上次收集的紀錄</summary><div id="botlog" class="hint" style="margin-top:6px"></div></details>
+  </div>
+  <div class="panel">
+    <h2>比較：訊號出現後買進 vs 任意一天買進</h2>
+    <div class="grid">
+      <label>同一波的冷卻天數<input id="botcd" type="number" value="20" min="1" max="250"></label>
+    </div>
+    <p class="hint">訊號在某天收盤成立，用隔天收盤價買進。前 N 個交易日都沒有訊號，才算新的一波（同一次崩盤只算一次）。
+      「勝過隨機」：從同一段期間隨機抽同樣次數的日子買進，重複 2000 次，訊號的平均報酬贏過幾 % 的隨機組合；95% 以上才算顯著。</p>
+    <div class="row" style="margin-top:10px"><button class="act" id="botrun">執行比較</button><span id="botstat" class="dimc"></span></div>
+  </div>
+  <div id="botout"></div>
+</section>
+
 </main>
 
 <script>
@@ -1083,6 +1114,90 @@ $("#runcmp").onclick = async () => {
   } catch (e) { $("#cmpstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 };
 
+
+// ============ 抄底訊號 ============
+let BOTJOB = null;
+const BOT_H = {5: "1 週", 20: "1 個月", 60: "3 個月", 120: "半年", 250: "1 年"};
+async function botInv() {
+  try {
+    const r = await api("/api/bottom/inventory");
+    let h = `<tr><th class="l">資料</th><th>天數</th><th class="l">起</th><th class="l">迄</th></tr>`;
+    r.series.forEach(x => h += `<tr><td class="l">${esc(x.name)}</td><td>${x.rows ? x.rows.toLocaleString() : "<span class='dimc'>沒有</span>"}</td><td class="l">${x.first || "–"}</td><td class="l">${x.last || "–"}</td></tr>`);
+    h += `<tr><td class="l">成分股檔案</td><td>${r.stocks}</td><td class="l" colspan="2">${r.collected_at ? "上次收集 " + esc(r.collected_at.replace("T", " ")) + " UTC" : ""}</td></tr>`;
+    $("#botinv").innerHTML = h;
+    $("#botlog").innerHTML = (r.log || []).map(esc).join("<br>") || "還沒收集過";
+  } catch (e) { $("#botinv").innerHTML = `<tr><td class="err">${esc(e.message)}</td></tr>`; }
+}
+$("#botcol").onclick = async () => {
+  try {
+    const j = await api("/api/bottom/collect", {method: "POST", body: {breadth: $("#botbreadth").checked}});
+    BOTJOB = j.id; $("#botcol").disabled = true; pollBot();
+  } catch (e) { $("#botcolstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+async function pollBot() {
+  const j = await api(`/api/jobs/${BOTJOB}`).catch(e => ({status: "error", error: e.message}));
+  $("#botbar").style.width = (j.total ? j.done / j.total * 100 : 0) + "%";
+  if (j.status === "running") {
+    $("#botcolstat").innerHTML = `<span class="tag run">收集中</span> ${j.total ? Math.round(j.done / j.total * 100) : 0}%`;
+    return setTimeout(pollBot, 2000);
+  }
+  $("#botcol").disabled = false;
+  if (j.status === "error") $("#botcolstat").innerHTML = `<span class="err">${esc(j.error)}</span>`;
+  else $("#botcolstat").innerHTML = `<span class="tag ok">${j.status === "done" ? "完成" : "已停止"}</span>`;
+  botInv();
+}
+function botVerdict(x) {
+  const r = x.h[250] || {}, r6 = x.h[120] || {};
+  const b = [r6.beat, r.beat].filter(v => v !== undefined);
+  if (!x.episodes) return ["這段期間沒有出現過", "dimc"];
+  const small = x.episodes < 10 ? `（只有 ${x.episodes} 次，樣本太少）` : "";
+  if (!b.length) return ["資料不夠算長期報酬" + small, "dimc"];
+  const m = Math.min(...b), M = Math.max(...b);
+  if (m >= 95) return ["半年、一年報酬都明顯勝過隨機買進" + small, "gold"];
+  if (M >= 80) return ["比隨機買進好一些，但不顯著" + small, ""];
+  if (M <= 20) return ["比隨機買進還差" + small, "down"];
+  return ["跟隨機買進差不多" + small, "dimc"];
+}
+function renderBot(r) {
+  let h = `<tr><th class="l">指標</th><th>最新值</th><th class="l">日期</th><th class="l">門檻</th><th class="l">狀態</th></tr>`;
+  r.now.forEach(x => h += `<tr><td class="l">${esc(x.name)}</td><td>${x.value === null ? "–" : fmt(x.value, x.value < 5 ? 2 : 1)}</td><td class="l">${x.date || "–"}</td><td class="l">${esc(x.threshold)}</td>
+    <td class="l">${x.hit === null ? "<span class='dimc'>沒資料</span>" : x.hit ? "<span class='tag run'>觸發</span>" : "<span class='dimc'>未觸發</span>"}</td></tr>`);
+  $("#botnow").innerHTML = h;
+  const out = $("#botout"); out.innerHTML = "";
+  r.results.forEach(x => {
+    const p = el("div", {className: "panel"});
+    if (x.error) { p.innerHTML = `<h2>${esc(x.title)} → ${esc(x.target)}</h2><p class="dimc">${esc(x.error)}</p>`; out.append(p); return; }
+    const [vt, vc] = botVerdict(x);
+    let t = `<h2>${esc(x.title)} → 買 ${esc(x.target)}</h2>
+      <div class="verdict"><span class="${vc}">${esc(vt)}</span></div>
+      <p class="hint">期間 ${x.span[0]} ～ ${x.span[1]}；訊號天數 ${x.signal_days}，共 ${x.episodes} 波${x.note ? "；" + esc(x.note) : ""}</p>
+      <div class="scroll"><table><tr><th class="l">持有</th><th>次數</th><th>平均</th><th>中位數</th><th>上漲比例</th><th>最差</th><th>任意日平均</th><th>任意日上漲比例</th><th>勝過隨機</th></tr>`;
+    r.horizons.forEach(hz => {
+      const v = x.h[hz] || {};
+      t += `<tr><td class="l">${BOT_H[hz]}</td><td>${v.n || 0}</td><td>${v.n ? sgn(v.mean, 2, "%") : "–"}</td><td>${v.n ? sgn(v.median, 2, "%") : "–"}</td>
+        <td>${v.n ? fmt(v.win, 0) + "%" : "–"}</td><td>${v.n ? sgn(v.worst, 1, "%") : "–"}</td><td>${sgn(v.base_mean, 2, "%")}</td><td>${fmt(v.base_win, 0)}%</td>
+        <td class="${v.beat >= 95 ? "gold" : ""}">${v.beat === undefined ? "–" : fmt(v.beat, 0) + "%"}</td></tr>`;
+    });
+    t += `</table></div>`;
+    if (x.list.length) {
+      t += `<details style="margin-top:8px"><summary>每一波明細（${x.list.length}）</summary><div class="scroll"><table><tr><th class="l">訊號日</th><th>持續天數</th>${r.horizons.map(hz => `<th>${BOT_H[hz]}</th>`).join("")}<th>之後 60 天最深</th><th>幾天後見低</th></tr>`;
+      x.list.slice().reverse().forEach(e => {
+        if (e.pending) { t += `<tr><td class="l">${e.date}</td><td colspan="${r.horizons.length + 3}" class="l dimc">剛觸發，還沒有進場資料</td></tr>`; return; }
+        t += `<tr><td class="l">${e.date}</td><td>${e.days_in_signal}</td>${r.horizons.map(hz => `<td>${e.ret[hz] === null ? "–" : sgn(e.ret[hz], 1, "%")}</td>`).join("")}<td>${sgn(e.mae60, 1, "%")}</td><td>${e.low_after}</td></tr>`;
+      });
+      t += `</table></div><p class="hint">「幾天後見低」＝進場後 1 年內最低收盤出現在第幾天，0 代表買在最低。</p></details>`;
+    }
+    p.innerHTML = t; out.append(p);
+  });
+}
+$("#botrun").onclick = async () => {
+  $("#botstat").textContent = "計算中…"; $("#botrun").disabled = true;
+  try { const r = await api("/api/bottom/study", {method: "POST", body: {cooldown: Number($("#botcd").value || 20)}}); renderBot(r); $("#botstat").textContent = ""; }
+  catch (e) { $("#botstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  $("#botrun").disabled = false;
+};
+document.querySelector('#nav button[data-t="bot"]').addEventListener("click", () => { botInv(); if (!$("#botnow").innerHTML) $("#botrun").click(); });
+
 // 重新整理或重新登入後，接回背景工作的進度；上一次最佳化的結果也一併載回
 async function resumeJobs() {
   let list = [];
@@ -1091,6 +1206,8 @@ async function resumeJobs() {
   if (bt) { initLS(); lsSources(); LSJOB = bt.id; if (bt.status === "running") $("#runls").disabled = true; pollLS(); }
   const dl = list.find(j => j.kind === "download" && j.status === "running");
   if (dl) { DLJOB = dl.id; $("#rundl").disabled = true; $("#stopdl").disabled = false; pollDl(); }
+  const bj = list.find(j => j.kind === "bottom" && j.status === "running");
+  if (bj) { BOTJOB = bj.id; $("#botcol").disabled = true; pollBot(); }
   const op = list.find(j => j.kind === "optimize");
   if (op) {
     OPTJOB = op.id;

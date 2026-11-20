@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import backtest, batch, dukascopy, jobs, mt5import, optimize, portfolio, store
+from . import backtest, batch, bottom, dukascopy, jobs, mt5import, optimize, portfolio, store
 from .instruments import INSTRUMENTS, cost_defaults
 from .strategies import REGISTRY, TXF_PRESET
 
@@ -202,6 +202,33 @@ def stop_job(jid: str):
     if j:
         j["stop"] = True
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ 抄底訊號
+@app.get("/api/bottom/inventory")
+async def bottom_inventory():
+    return await run_in_threadpool(bottom.inventory)
+
+
+@app.post("/api/bottom/collect")
+async def bottom_collect(body: dict):
+    if jobs.running("bottom"):
+        raise HTTPException(409, "已經在收集資料了，等它結束")
+    breadth = bool(body.get("breadth", True))
+    job = jobs.start("bottom", lambda p, s: bottom.collect(p, s, with_breadth=breadth),
+                     label="抄底訊號資料" + ("（含成分股廣度）" if breadth else "（不含成分股）"))
+    return jobs.public(job)
+
+
+@app.post("/api/bottom/study")
+async def bottom_study(body: dict):
+    cd = int(body.get("cooldown") or 20)
+    if not 1 <= cd <= 250:
+        raise HTTPException(400, "冷卻天數要在 1～250 之間")
+    try:
+        return await run_in_threadpool(bottom.study, cd)
+    except Exception as e:
+        raise HTTPException(400, f"{type(e).__name__}: {e}")
 
 
 # ------------------------------------------------------------------ 參數組合存檔
