@@ -551,6 +551,10 @@ def signal_defs():
         ("four2", "四大訊號 ≥ 2 個", "SPX", lambda p: p["n4"] >= 2, ["fg", "vix", "rsi", "pct5"], "恐懼貪婪<10、VIX>40、RSI<30、總P/C 5日均>0.9"),
         ("four3", "四大訊號 ≥ 3 個", "SPX", lambda p: p["n4"] >= 3, ["fg", "vix", "rsi", "pct5"], ""),
         ("four4", "四大訊號全中", "SPX", lambda p: p["n4"] >= 4, ["fg", "vix", "rsi", "pct5"], ""),
+        ("three2", "VIX／RSI／P/C ≥ 2 個（不含恐懼貪婪）", "SPX", lambda p: p["n3"] >= 2, ["vix", "rsi", "pct5"],
+         "VIX>40、RSI<30、總P/C 5日均>0.9；2006 起，含 2008"),
+        ("three3", "VIX／RSI／P/C 三個全中（不含恐懼貪婪）", "SPX", lambda p: p["n3"] >= 3, ["vix", "rsi", "pct5"],
+         "同上，三個同時成立；2006 起，含 2008"),
         ("gold_rsi", "黃金日 RSI(14) < 30", "GOLD", lambda p: p["rsi"] < 30, ["rsi"], "期貨連續月"),
         ("silver_rsi", "白銀日 RSI(14) < 30", "SILVER", lambda p: p["rsi"] < 30, ["rsi"], "期貨連續月"),
     ]
@@ -572,6 +576,7 @@ def panel(target):
         p["pce5"] = _on(load_series("PC_EQUITY"), idx).rolling(5, min_periods=5).mean()
         p["s5fi"] = _on(load_series("S5FI"), idx)
         p["ndfi"] = _on(load_series("NDFI"), idx)
+        p["n3"] = (p["vix"] > 40).astype(int) + (p["rsi"] < 30).astype(int) + (p["pct5"] > 0.9).astype(int)
         p["n4"] = (p["fg"] < 10).astype(int) + (p["vix"] > 40).astype(int) + (p["rsi"] < 30).astype(int) + (p["pct5"] > 0.9).astype(int)
     return p
 

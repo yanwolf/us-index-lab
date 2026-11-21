@@ -148,6 +148,7 @@ e = v["list"][0]
 check("訊號日正確", e["date"] == str(DAYS[910].date()), e["date"])
 want60 = SPX[911 + 60] / SPX[911] - 1
 check("隔天收盤進場、60 天報酬手算一致", abs(e["ret"][60] - round(want60 * 100, 2)) < 1e-9, f"{e['ret'][60]} vs {want60 * 100:.2f}")
+check("不含恐懼貪婪的三訊號有算出來", "error" not in by["three3"] and by["three3"]["episodes"] >= 1 and by["three2"]["span"][0] <= by["four2"]["span"][0])
 check("四大訊號組合有算出來", "error" not in by["four2"] and by["four2"]["episodes"] >= 1)
 check("勝過隨機在 0～100", all(0 <= h.get("beat", 50) <= 100 for x in r["results"] if "h" in x for h in x["h"].values()))
 check("目前狀態有九項", len(r["now"]) == 9)
