@@ -44,7 +44,9 @@ STOCKS = {f"S{i:03d}": 50 * np.cumprod(1 + RNG.normal(0.0003, 0.015, len(DAYS)))
 for v in STOCKS.values():
     v[900:930] *= np.linspace(1, 0.6, 30)
     v[930:] *= 0.6
-NDXS = {f"N{i:02d}": STOCKS[f"S{i:03d}"] for i in range(60)}
+import string
+NDXS = {"N" + string.ascii_uppercase[i // 26] + string.ascii_uppercase[i % 26]: STOCKS[f"S{i:03d}"] for i in range(60)}
+WIKI_OK = [True]
 calls = {"pc_daily": 0}
 
 
@@ -89,9 +91,13 @@ def fake_get(url, headers=None, timeout=30, retries=3):
         rows += [f"S{i:03d},2008-01-01," for i in range(281, 300)]      # 後來才加入的
         return ("ticker,start_date,end_date\n" + "\n".join(rows)).encode()
     if url == bottom.URLS["ndx_wiki"]:
+        if not WIKI_OK[0]:
+            return b"<html><table><tr><th>a</th></tr><tr><td>1</td></tr></table></html>"
         rows = "".join(f"<tr><td>Co {t}</td><td>{t}</td></tr>" for t in NDXS)
-        filler = "".join(f"<tr><td>x</td><td>X{i}</td></tr>" for i in range(30))   # 湊到 90 列，像真的表
+        filler = "".join(f"<tr><td>x</td><td>X{string.ascii_uppercase[i]}</td></tr>" for i in range(26)) + "<tr><td>x</td><td>BRK.B</td></tr>"*4   # 湊到 90 列，像真的表
         return f"<html><table><tr><th>Company</th><th>Ticker</th></tr>{rows}{filler}</table></html>".encode()
+    if "api.nasdaq.com" in url:
+        return json.dumps({"data": {"data": {"rows": [{"symbol": t} for t in list(NDXS) + [f"Z{c}" for c in string.ascii_uppercase[:30 if False else 26]] + ["ZZA", "ZZB", "ZZC", "ZZD"]]}}}).encode()
     raise FileNotFoundError(url)
 
 
@@ -123,6 +129,16 @@ want0 = float((px.loc[d0, [f'S{i:03d}' for i in range(280)]] > ma.loc[d0, [f'S{i
 check("S5FI 不算還沒加入的股票", abs(s5.loc[d0, "value"] - want0) < 1e-9)
 check("急跌時 S5FI 掉到 10 以下", s5.loc[DAYS[928], "value"] < 10, f"{s5.loc[DAYS[928], 'value']:.1f}")
 
+# 那斯達克 100 清單：維基百科壞掉 → Nasdaq 官網；兩個都壞 → 沿用上次
+WIKI_OK[0] = False
+lg = []
+t2 = bottom.ndx_members(fake_get, lg)
+check("維基百科失敗改用 Nasdaq 官網", len(t2) == 90 and "Nasdaq 官網" in lg[0], lg[0][:60])
+lg = []
+t3 = bottom.ndx_members(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")), lg)
+check("兩個來源都失敗沿用上次清單", t3 == t2 and "沿用" in lg[0])
+WIKI_OK[0] = True
+
 # 事件研究
 r = bottom.study(20)
 by = {x["id"]: x for x in r["results"]}
@@ -135,6 +151,9 @@ check("隔天收盤進場、60 天報酬手算一致", abs(e["ret"][60] - round(
 check("四大訊號組合有算出來", "error" not in by["four2"] and by["four2"]["episodes"] >= 1)
 check("勝過隨機在 0～100", all(0 <= h.get("beat", 50) <= 100 for x in r["results"] if "h" in x for h in x["h"].values()))
 check("目前狀態有九項", len(r["now"]) == 9)
+nw = {x["name"]: x for x in r["now"]}
+check("上次觸發日期", nw["VIX"]["last_hit"] == str(DAYS[924].date()), str(nw["VIX"].get("last_hit")))
+check("沒有近一週觸發", nw["VIX"]["week_hit"] is False and nw["VIX"]["last_hit_ago"] == len(DAYS) - 1 - 924)
 
 # API
 from fastapi.testclient import TestClient  # noqa: E402

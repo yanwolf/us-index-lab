@@ -18,6 +18,7 @@
 """
 import io
 import json
+import re
 import os
 import threading
 import time
@@ -316,20 +317,61 @@ def sp_members(get=http_get):
     return df
 
 
-def ndx_members(get=http_get):
+_TICKER_RE = re.compile(r"^[A-Z]{1,5}([.-][A-Z])?$")
+
+
+def _ndx_from_wiki(get):
     html = get(URLS["ndx_wiki"]).decode("utf-8", "replace")
-    tickers = []
-    for tbl in pd.read_html(io.StringIO(html)):
-        cols = [str(c).lower() for c in tbl.columns]
-        col = next((tbl.columns[i] for i, c in enumerate(cols) if c in ("ticker", "symbol")), None)
-        if col is not None and 80 <= len(tbl) <= 110:
-            tickers = [str(t).strip() for t in tbl[col] if isinstance(t, str)]
-            break
-    if not tickers:
-        raise RuntimeError("維基百科的那斯達克 100 成分股表格找不到（頁面格式可能改了）")
-    with open(_root("ndx_members.json"), "w") as fh:
-        json.dump({"tickers": tickers, "as_of": date.today().isoformat()}, fh)
-    return tickers
+    tables = pd.read_html(io.StringIO(html))
+    seen = []
+    best = []
+    for tbl in tables:
+        cols = [" ".join(map(str, c)) if isinstance(c, tuple) else str(c) for c in tbl.columns]
+        seen.append(f"{len(tbl)}列[{', '.join(cols[:4])}]")
+        # 欄名含 ticker/symbol 的優先；沒有的話，看哪一欄內容最像股票代號
+        order = sorted(range(len(cols)), key=lambda i: not re.search(r"ticker|symbol", cols[i], re.I))
+        for i in order:
+            vals = [str(v).strip() for v in tbl.iloc[:, i] if isinstance(v, str)]
+            good = [v for v in vals if _TICKER_RE.match(v)]
+            if 90 <= len(good) <= 115 and len(good) > len(best):
+                best = good
+    if not best:
+        raise RuntimeError(f"維基百科有 {len(tables)} 個表格，找不到約 100 個代號的那一個：{'; '.join(seen[:8])}")
+    return best
+
+
+def _ndx_from_nasdaq(get):
+    j = json.loads(get("https://api.nasdaq.com/api/quote/list-type/nasdaq100",
+                       headers={"Accept": "application/json", "Origin": "https://www.nasdaq.com", "Referer": "https://www.nasdaq.com/"}))
+    rows = (((j.get("data") or {}).get("data") or {}).get("rows")) or []
+    t = [str(r.get("symbol", "")).strip().upper() for r in rows if r.get("symbol")]
+    if not 90 <= len(t) <= 115:
+        raise RuntimeError(f"Nasdaq 官網回傳 {len(t)} 檔")
+    return t
+
+
+def ndx_members(get=http_get, log=None):
+    """那斯達克 100 現在的成分股：維基百科 → Nasdaq 官網 → 上次存的清單。"""
+    p = _root("ndx_members.json")
+    errs = []
+    for name, fn in (("維基百科", _ndx_from_wiki), ("Nasdaq 官網", _ndx_from_nasdaq)):
+        try:
+            tickers = fn(get)
+            os.makedirs(_root(), exist_ok=True)
+            with open(p, "w") as fh:
+                json.dump({"tickers": tickers, "as_of": date.today().isoformat(), "source": name}, fh)
+            if log is not None:
+                log.append(f"那斯達克 100 成分股：{len(tickers)} 檔（{name}）" + (f"；先前失敗：{'；'.join(errs)}" if errs else ""))
+            return tickers
+        except Exception as e:
+            errs.append(f"{name} {type(e).__name__}: {e}")
+    if os.path.exists(p):
+        with open(p) as fh:
+            old = json.load(fh)
+        if log is not None:
+            log.append(f"那斯達克 100 成分股兩個來源都失敗，沿用 {old.get('as_of')} 的清單；{'；'.join(errs)}")
+        return old["tickers"]
+    raise RuntimeError("；".join(errs))
 
 
 def collect(progress, stop, with_breadth=True, get=http_get):
@@ -381,7 +423,7 @@ def collect(progress, stop, with_breadth=True, get=http_get):
         except Exception as e:
             log.append(f"S&P 歷史成分股清單失敗：{e}")
         try:
-            for t in ndx_members(get):
+            for t in ndx_members(get, log):
                 tickers.setdefault(t, t)
         except Exception as e:
             log.append(f"那斯達克 100 成分股清單失敗：{e}")
@@ -609,20 +651,28 @@ def current_status(panels=None):
     panels = panels or {t: panel(t) for t in ("SPX", "NDX", "GOLD", "SILVER")}
     out = []
 
-    def last(t, col):
+    def info(t, col, thr, op):
         p = panels.get(t)
         if p is None or col not in p or p[col].dropna().empty:
-            return None, None
-        s = p[col].dropna()
-        return float(s.iloc[-1]), str(s.index[-1].date())
+            return None
+        sr = p[col].dropna()
+        hit = (sr > thr) if op == ">" else (sr < thr)
+        wk = sr.iloc[-5:]                       # 最近 5 個交易日（含今天）
+        wk_ext = wk.max() if op == ">" else wk.min()
+        hits = sr.index[hit.to_numpy()]
+        last_hit = hits[-1] if len(hits) else None
+        return {"value": float(sr.iloc[-1]), "date": str(sr.index[-1].date()), "hit": bool(hit.iloc[-1]),
+                "week_hit": bool(hit.iloc[-5:].any()), "week_ext": float(wk_ext),
+                "week_ext_date": str(wk.idxmax().date() if op == ">" else wk.idxmin().date()),
+                "last_hit": None if last_hit is None else str(last_hit.date()),
+                "last_hit_ago": None if last_hit is None else int(len(sr) - 1 - sr.index.get_loc(last_hit))}
 
     for label, t, col, thr, op in (("VIX", "SPX", "vix", 40, ">"), ("S5FI", "SPX", "s5fi", 10, "<"), ("NDFI", "NDX", "ndfi", 10, "<"),
                                    ("恐懼貪婪", "SPX", "fg", 10, "<"), ("S&P RSI(14)", "SPX", "rsi", 30, "<"),
                                    ("總 P/C 5 日均", "SPX", "pct5", 0.9, ">"), ("股票 P/C 5 日均", "SPX", "pce5", 0.9, ">"),
                                    ("黃金 RSI(14)", "GOLD", "rsi", 30, "<"), ("白銀 RSI(14)", "SILVER", "rsi", 30, "<")):
-        v, d = last(t, col)
-        out.append({"name": label, "value": v, "date": d, "threshold": f"{op} {thr}",
-                    "hit": None if v is None else (v > thr if op == ">" else v < thr)})
+        x = info(t, col, thr, op) or {"value": None, "date": None, "hit": None}
+        out.append({"name": label, "threshold": f"{op} {thr}", **x})
     return out
 
 

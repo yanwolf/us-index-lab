@@ -257,7 +257,7 @@
   <div class="panel">
     <h2>現在的狀態</h2>
     <div class="scroll"><table id="botnow"></table></div>
-    <p class="hint">每個指標最後一筆資料的日期不同（例如恐懼貪婪每天更新、P/C 晚一天），看日期欄。</p>
+    <p class="hint">每個指標最後一筆資料的日期不同，看日期欄。「近一週」＝各指標自己最近 5 個交易日；當天沒觸發、但這 5 天內有觸發過，狀態會顯示「近一週觸發過」。</p>
   </div>
   <div class="panel">
     <h2>資料</h2>
@@ -273,7 +273,7 @@
   <div class="panel">
     <h2>比較：訊號出現後買進 vs 任意一天買進</h2>
     <div class="grid">
-      <label>同一波的冷卻天數<input id="botcd" type="number" value="20" min="1" max="250"></label>
+      <label>同一波的冷卻天數<input id="botcd" type="number" value="20" min="1" max="250" step="1" inputmode="numeric"></label>
     </div>
     <p class="hint">訊號在某天收盤成立，用隔天收盤價買進。前 N 個交易日都沒有訊號，才算新的一波（同一次崩盤只算一次）。
       「勝過隨機」：從同一段期間隨機抽同樣次數的日子買進，重複 2000 次，訊號的平均報酬贏過幾 % 的隨機組合；95% 以上才算顯著。</p>
@@ -1159,9 +1159,17 @@ function botVerdict(x) {
   return ["跟隨機買進差不多" + small, "dimc"];
 }
 function renderBot(r) {
-  let h = `<tr><th class="l">指標</th><th>最新值</th><th class="l">日期</th><th class="l">門檻</th><th class="l">狀態</th></tr>`;
-  r.now.forEach(x => h += `<tr><td class="l">${esc(x.name)}</td><td>${x.value === null ? "–" : fmt(x.value, x.value < 5 ? 2 : 1)}</td><td class="l">${x.date || "–"}</td><td class="l">${esc(x.threshold)}</td>
-    <td class="l">${x.hit === null ? "<span class='dimc'>沒資料</span>" : x.hit ? "<span class='tag run'>觸發</span>" : "<span class='dimc'>未觸發</span>"}</td></tr>`);
+  let h = `<tr><th class="l">指標</th><th>最新值</th><th class="l">日期</th><th class="l">門檻</th><th class="l">狀態</th><th>近一週最極端</th><th class="l">上次觸發</th></tr>`;
+  r.now.forEach(x => {
+    let st = "<span class='dimc'>沒資料</span>";
+    if (x.hit === true) st = "<span class='tag run'>觸發</span>";
+    else if (x.week_hit) st = `<span class='tag run' style='opacity:.6'>近一週觸發過</span>`;
+    else if (x.hit === false) st = "<span class='dimc'>未觸發</span>";
+    const d = v => fmt(v, Math.abs(v) < 5 ? 2 : 1);
+    const ago = x.last_hit ? `${x.last_hit}<span class="dimc">（${x.last_hit_ago === 0 ? "今天" : x.last_hit_ago + " 個交易日前"}）</span>` : "<span class='dimc'>從未</span>";
+    h += `<tr><td class="l">${esc(x.name)}</td><td>${x.value === null ? "–" : d(x.value)}</td><td class="l">${x.date || "–"}</td><td class="l">${esc(x.threshold)}</td><td class="l">${st}</td>
+      <td>${x.week_ext === undefined ? "–" : d(x.week_ext) + `<span class="dimc"> ${x.week_ext_date.slice(5)}</span>`}</td><td class="l">${x.value === null ? "–" : ago}</td></tr>`;
+  });
   $("#botnow").innerHTML = h;
   const out = $("#botout"); out.innerHTML = "";
   r.results.forEach(x => {
