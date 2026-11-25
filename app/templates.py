@@ -4,7 +4,7 @@ grid 空的 = 單純回測；有 grid = 最佳化（目標報酬／回撤、平�
 from .strategies import TXF_PRESET
 
 START = "2021-02-05"          # Dukascopy 第一筆 2021-01-03，留一個月暖機
-SYM_NAME = {"NAS100": "那指", "HK50": "恆指", "JP225": "日經", "US500": "標普"}
+SYM_NAME = {"NAS100": "那指", "HK50": "恆指", "JP225": "日經", "US500": "標普", "XAUUSD": "黃金"}
 
 GY_S_GRID = {"TF_N": [0, 200, 100], "MA2": [0, 100, 50], "WIN": [1.5, 4.5, 0.5], "EBX": [1, 2, 1]}      # 126 組
 ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.5]}                     # 96 組
@@ -117,6 +117,20 @@ def templates():
     out.append(_t(g9, "那指 GY25 60 分｜擴大範圍｜Dukascopy 2018 起（換資料來源對照）", "GuYuan_2025", "NAS100",
                   minutes=60, grid=G9, start="2018-01-02", note="同一組掃描換 Dukascopy 跑，平台位置應該差不多"))
     out[-1].update(wf_k=3, wf_m=1)
+    # ⑩ 黃金：台指策略原封不動先跑一次（先在「資料」頁下載 XAUUSD，開始日填 2021-01-01）
+    g10 = "⑩ 黃金 XAUUSD：台指策略先用原參數跑一次（2021 起，含 2022 下跌）"
+    out += [
+        _t(g10, "黃金多 GuYuan_2025（預設，20 分 K）", "GuYuan_2025", "XAUUSD", note="指數上目前最好的一支"),
+        _t(g10, "黃金多 GuYuan_2025 60 分 K", "GuYuan_2025", "XAUUSD", minutes=60, note="那指 60 分 K 比 20 分好，看黃金是不是一樣"),
+        _t(g10, "黃金多 GuYuan_2024 台指參數", "GuYuan_2024", "XAUUSD"),
+        _t(g10, "黃金多 AR_crossover", "AR_crossover", "XAUUSD"),
+        _t(g10, "黃金 TMFF（多空）", "TMFF", "XAUUSD"),
+        _t(g10, "黃金空 GuYuan_2024_S 台指參數", "GuYuan_2024_S", "XAUUSD", params=dict(TXF_PRESET["GuYuan_2024_S"])),
+        _t(g10, "黃金空 AR_crossunder", "AR_crossunder", "XAUUSD"),
+        _t(g10, "黃金空 TMFF_S", "TMFF_S", "XAUUSD"),
+        _t(g10, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
+           note="成本敏感度：滑價加倍還站得住才算數"),
+    ]
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"

@@ -44,6 +44,20 @@ INSTRUMENTS = {
         "spread": 5.0, "slippage": 1.0, "commission": 0.0, "swap_long_pct": 5.19, "swap_short_pct": -0.19,
         "usd_per_point": 1.0,
     },
+    "XAUUSD": {
+        # 黃金（2026-11-26 加）：幾乎 24 小時交易、沒有天然的日夜盤，所以自己定——
+        #   交易日：紐約 17:00 換日（黃金慣例，17:00–18:00 休市）
+        #   主時段：紐約 08:20–13:30（COMEX 正規交易時段，波動和量最集中），其餘算「夜盤」，CloseS 在這兩段之間切
+        # 成本：Pepperstone XAUUSD 只收點差（22:00 截圖 0.23；取 0.25）＋滑價每邊 0.1（等 cfd-live 實際成交校準）
+        # 庫存費：Pepperstone 點模式每手每晚 買 −81.22／賣 +28.42 點 → 每盎司約 −0.81／+0.28 點；
+        #   這裡的引擎是「每跨一個交易日收一次、年化 % ÷ 360」，券商是每週 7 晚（週三收 3 倍），
+        #   所以每個交易日 ≈ 0.81 × 7/5 ＝ 1.13 點，以 4100 換成年化 ≈ 9.9%；空方 0.28 × 7/5 ＝ 0.40 點 → −3.5%
+        # 1 單位 ＝ 1 盎司（MT5 0.01 手），1 點 ＝ 1 美元
+        "name": "黃金", "duka": "XAUUSD", "price_range": (500, 20000),
+        "tz": "America/New_York", "day_roll": 1700, "rth": (820, 1330), "eth_start": 1330, "rth_name": "COMEX 時段", "eth_name": "其他時段",
+        "spread": 0.25, "slippage": 0.1, "commission": 0.0, "swap_long_pct": 9.9, "swap_short_pct": -3.5,
+        "usd_per_point": 1.0,
+    },
 }
 
 DEFAULT = "US500"
