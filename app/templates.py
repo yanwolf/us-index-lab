@@ -44,17 +44,27 @@ def templates():
            note="成本敏感度：滑價加倍還站得住才算數"),
     ]
 
-    # C. TurtleMA 最後一次機會：只做多的真正波段版（關斜率出場、跌破 60MA 才出、抱過週末）
-    #    原版已結案（四個指數多空全虧、空方毛利就是負的，見 README）；報酬／回撤打不贏同期 GuYuan_2025 就結案
-    gC = "C. TurtleMA 波段版（只做多、XS=0、X60=1、WKX=0）vs 同期 GuYuan_2025（Dukascopy 2021 起）"
+    # C. TurtleMA 波段版（只做多、XS=0、X60=1、WKX=0）
+    #    Dukascopy 2021 起：那指打不贏 GY25（報酬／回撤 0.40 vs 0.85、相關 0.67）→ 那指結案；
+    #    日經贏 GY25 20 分（0.72 vs 0.26、PF 1.44），和那指 GY25 相關只有 0.04 → 日經進入確認
     SWING = {"SIDE": 1, "XS": 0, "X60": 1, "WKX": 0}
+    gC = "C. 日經 TurtleMA 波段版：候選確認（Pepperstone 2018 起，含 2018–2020 樣本外）"
+    PS18 = dict(start="2018-01-02", source="mt5-pepperstone")
+    t = _t(gC, "日經 TurtleMA 波段版 鄰近值掃描（DC × LOSS × MA2，60 組，每 2 年重挑）", "TurtleMA", "JP225", params=SWING,
+           grid={"DC": [40, 160, 40], "LOSS": [2, 4, 0.5], "MA2": [40, 80, 20]}, **PS18,
+           note="預設 DC 80／LOSS 3／MA2 60 從沒在波段模式掃過；MA2 同時是出場線（跌破才出）")
+    t.update(wf_k=3, wf_m=1)
     out += [
-        _t(gC, "那指 TurtleMA 波段版", "TurtleMA", "NAS100", params=SWING,
-           note="關掉 20MA 斜率出場（原本九成出場是它，平均只抱 11 小時），跌破 60MA 才出、抱過週末"),
-        _t(gC, "那指 GuYuan_2025 60 分（對照，模擬倉 nas_gy25_60）", "GuYuan_2025", "NAS100", minutes=60),
-        _t(gC, "日經 TurtleMA 波段版", "TurtleMA", "JP225", params=SWING),
-        _t(gC, "日經 GuYuan_2025 20 分（對照，模擬倉 jp_gy25）", "GuYuan_2025", "JP225"),
-        _t(gC, "黃金 TurtleMA 預設（多空）", "TurtleMA", "XAUUSD", note="黃金資料下載完再跑"),
-        _t(gC, "黃金 TurtleMA 波段版", "TurtleMA", "XAUUSD", params=SWING, note="黃金資料下載完再跑；對照組是 B 的黃金 GuYuan_2025"),
+        _t(gC, "日經 TurtleMA 波段版｜Pepperstone 2018 起全段", "TurtleMA", "JP225", params=SWING, **PS18,
+           note="2018–2020 這段完全沒參與；看逐年，和每日權益（要跟那指 GY25 算相關）"),
+        t,
+        _t(gC, "日經 TurtleMA 波段版｜滑價加倍（每邊 6 點）", "TurtleMA", "JP225", params=SWING, costs={"slippage": 6}, **PS18),
+        _t(gC, "日經 TurtleMA 波段版｜Dukascopy 2018 起（換資料來源對照）", "TurtleMA", "JP225", params=SWING,
+           start="2018-01-02", note="Dukascopy 日經從 2017-12 開始"),
+    ]
+    gC2 = "C2. 黃金 TurtleMA（黃金資料下載完再跑）"
+    out += [
+        _t(gC2, "黃金 TurtleMA 預設（多空）", "TurtleMA", "XAUUSD"),
+        _t(gC2, "黃金 TurtleMA 波段版", "TurtleMA", "XAUUSD", params=SWING, note="對照組是 B 的黃金 GuYuan_2025"),
     ]
     return out
