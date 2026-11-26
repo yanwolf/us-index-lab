@@ -180,6 +180,33 @@ def templates():
         t.update(wf_k=3, wf_m=1)
         out.append(t)
 
+    # ⑫c 候選確認：⑫ 只有標普 AR 新出場明顯變好（PF 1.18、回撤 9.9%），恆指 GY24_S 是 ② 唯一像樣的空方
+    g12c = "⑫c 候選確認：標普 AR 新出場、恆指 GY24_S 空方、與那指 GY25 的組合"
+    PS18 = dict(start="2018-01-02", source="mt5-pepperstone")
+    HK_S = dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=50, TF_N=100, EBX=2)
+    t = _t(g12c, "標普 AR 新出場掃描（180 組，每 2 年重挑）", "AR_crossover", "US500", params=ARX_NEW,
+           grid={"LOSS": [2, 6, 1], "WIN": [6, 12, 2], "Twin": [0.4, 1.2, 0.4], "Tstop": [0.8, 2.4, 0.8]}, **PS18,
+           note="看 4／8／0.8／1.6 周圍是不是一整片都好（平台），而不是孤峰")
+    t.update(wf_k=3, wf_m=1)
+    out.append(t)
+    out += [
+        _t(g12c, "標普 AR 新出場｜滑價加倍（每邊 0.4）", "AR_crossover", "US500", params=ARX_NEW,
+           costs={"slippage": 0.4}, **PS18, note="成本敏感度"),
+        _t(g12c, "標普 AR 新出場｜2013–2017 樣本外（Dukascopy）", "AR_crossover", "US500", params=ARX_NEW,
+           start="2013-01-02", end="2017-11-30", source="duka",
+           note="要先在「資料」頁下載 US500 Dukascopy，開始日填 2012-12-01；含 2015-08、2016 年初修正"),
+        _t(g12c, "標普 AR 新出場｜Dukascopy 2018 起（換資料來源對照）", "AR_crossover", "US500", params=ARX_NEW,
+           start="2018-01-02", source="duka", note="和 Pepperstone 結果應該接近，差很多就是資料問題"),
+        _t(g12c, "恆指 GY24_S 好區參數｜2018–2020 樣本外（Pepperstone）", "GuYuan_2024_S", "HK50", params=HK_S,
+           start="2018-01-02", end="2020-12-31", source="mt5-pepperstone",
+           note="WIN 2、MA2 50、TF_N 100、EBX 2；這段沒參與 ② 的挑選，含 2018 下跌、2019 反送中、2020 疫情"),
+        _t(g12c, "恆指 GY24_S 好區參數｜Pepperstone 2018 起全段", "GuYuan_2024_S", "HK50", params=HK_S, **PS18),
+        _t(g12c, "恆指 GY24_S 好區參數｜滑價加倍（每邊 2 點）", "GuYuan_2024_S", "HK50", params=HK_S,
+           costs={"slippage": 2}, **PS18),
+        _t(g12c, "那指 GY25 60 分（模擬倉 nas_gy25_60）｜Pepperstone 2018 起", "GuYuan_2025", "NAS100", minutes=60, **PS18,
+           note="組合用：和上面標普 AR、恆指 GY24_S 同一段期間，一起匯出 CSV 我算相關性和合併回撤"),
+    ]
+
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"
