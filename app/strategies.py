@@ -229,4 +229,67 @@ class GuYuan2025(Strategy):
             self.sell_limit(ep + self.U(p["WIN"]), "停利")
 
 
-REGISTRY = {c.name: c for c in (TMFF, TMFFShort, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025)}
+class TurtleMA(Strategy):
+    """刀神「海龜突破 + 均線三刀流」（2026-11-26 新增，非台指移植）。
+
+    方向（海龜）：收盤突破前 DC 根最高價 → 偏多；跌破前 DC 根最低價 → 偏空；狀態延續到反向突破。
+      60 分 K 的 DC=80 ≈ 4 小時 K 的 20 根。用收盤確認、只看前一根以前的高低點，沒有偷看。
+    進場（三刀流）：偏多且 MA1 > MA2 > MA3（20 > 60 > 240）、MA1 斜率向上 → 下一根開盤市價做多；空方鏡像。
+      斜率也要同向，避免「張飛斜率出場」後下一根馬上又進場。
+    出場：硬停損 LOSS 單位；張飛：MA1 斜率反轉（XS=1）；方向翻轉；X60=1 時收盤跌破／站上 MA2（關羽）也出場。
+    跟 GuYuan_2025 的差別：突破週期約長 10 倍、突破只當方向濾網、沒有固定停利（讓獲利跑）、可做空。"""
+    name = "TurtleMA"
+    desc = "多空。前 DC 根高低點突破定方向 + MA1>MA2>MA3 排列進場，MA1 斜率反轉／方向翻轉／硬停損出場，無固定停利"
+    minutes = 60
+    inputs = dict(DC=80, MA1=20, MA2=60, MA3=240, SLP=1, LOSS=3.0, XS=1, X60=0, SIDE=0, TF_N=0)
+    doc = dict(DC="海龜方向：前幾根的最高／最低（60 分 K 的 80 ≈ 4 小時 K 的 20）",
+               MA1="張飛：短均線（斜率出場）", MA2="關羽：中均線", MA3="劉備：長均線",
+               SLP="斜率：MA1 跟幾根前的 MA1 比", LOSS="硬停損（單位）",
+               XS="1 = MA1 斜率反轉就出場（張飛收兵），0 = 關閉", X60="1 = 收盤跌破／站上 MA2 也出場（關羽），0 = 關閉",
+               SIDE="0 = 多空都做、1 = 只做多、-1 = 只做空",
+               TF_N="日線趨勢濾網：前一日收盤在 N 日均線之上才做多、之下才做空，0 = 關閉")
+
+    def __init__(self, params=None):
+        super().__init__(params)
+        self.dir = 0
+
+    def on_bar(self):
+        p = self.p
+        dc = int(p["DC"])
+        if self.i >= dc:
+            c = self.C()
+            if c > self.highest("H", dc, 1):
+                self.dir = 1
+            elif c < self.lowest("L", dc, 1):
+                self.dir = -1
+        m1, m2, m3 = self.avg("C", p["MA1"]), self.avg("C", p["MA2"]), self.avg("C", p["MA3"])
+        slope = m1 - self.avg("C", p["MA1"], int(p["SLP"]))
+        warm = self.i >= max(int(p["MA3"]), dc)
+        side = int(p["SIDE"])
+
+        if self.mp > 0:
+            if self.dir < 0:
+                self.sell_market("海龜方向翻空")
+            elif p["XS"] and slope < 0:
+                self.sell_market("張飛：MA1 斜率轉負")
+            elif p["X60"] and self.C() < m2:
+                self.sell_market("關羽：跌破 MA2")
+            else:
+                self.sell_stop(self.entryprice - self.U(p["LOSS"]), "停損")
+        elif self.mp < 0:
+            if self.dir > 0:
+                self.buytocover_market("海龜方向翻多")
+            elif p["XS"] and slope > 0:
+                self.buytocover_market("張飛：MA1 斜率轉正")
+            elif p["X60"] and self.C() > m2:
+                self.buytocover_market("關羽：站上 MA2")
+            else:
+                self.buytocover_stop(self.entryprice + self.U(p["LOSS"]), "停損")
+        elif warm:
+            if side >= 0 and self.dir > 0 and m1 > m2 > m3 and slope > 0 and self.trend_ok(p["TF_N"], 1):
+                self.buy_market("海龜偏多 + 多頭排列")
+            elif side <= 0 and self.dir < 0 and m1 < m2 < m3 and slope < 0 and self.trend_ok(p["TF_N"], -1):
+                self.sellshort_market("海龜偏空 + 空頭排列")
+
+
+REGISTRY = {c.name: c for c in (TMFF, TMFFShort, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025, TurtleMA)}

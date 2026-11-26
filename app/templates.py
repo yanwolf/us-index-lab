@@ -131,6 +131,26 @@ def templates():
         _t(g10, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
            note="成本敏感度：滑價加倍還站得住才算數"),
     ]
+    # ⑪ 刀神海龜突破 + 均線三刀流：先用預設跑五個商品，多空分開看，再掃描
+    g11 = "⑪ TurtleMA（刀神海龜突破＋三刀流，60 分 K）：先跑預設，多空分開看"
+    for sym in ("NAS100", "US500", "JP225", "HK50", "XAUUSD"):
+        n = SYM_NAME[sym]
+        out += [
+            _t(g11, f"{n} TurtleMA 多空（預設）", "TurtleMA", sym, note="DC=80 ≈ 4 小時 20 根；20/60/240 均線；停損 3 單位、無固定停利"),
+            _t(g11, f"{n} TurtleMA 只做多", "TurtleMA", sym, params={"SIDE": 1}),
+            _t(g11, f"{n} TurtleMA 只做空", "TurtleMA", sym, params={"SIDE": -1}, note="空方是補位的重點"),
+        ]
+    g11b = "⑪b TurtleMA 掃描（DC × LOSS × SLP，60 組）"
+    for sym in ("NAS100", "JP225", "XAUUSD"):
+        out.append(_t(g11b, f"{SYM_NAME[sym]} TurtleMA 掃描", "TurtleMA", sym,
+                      grid={"DC": [40, 160, 40], "LOSS": [1.5, 3.5, 0.5], "SLP": [1, 5, 2]},
+                      note="均線維持 20/60/240；看平台分數，不挑孤峰"))
+    out.append(_t(g11b, "日經 TurtleMA 加關羽出場 X60=1", "TurtleMA", "JP225", params={"X60": 1},
+                  note="跌破 60MA 也出場，比較出場快慢"))
+    for sym in ("NAS100", "JP225"):
+        out.append(_t(g11b, f"{SYM_NAME[sym]} TurtleMA 抱單過週末 WKX=0", "TurtleMA", sym, params={"WKX": 0},
+                      note="波段策略週五強制出場會砍斷趨勢；看抱過週末（含跳空風險）是好是壞"))
+
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"
