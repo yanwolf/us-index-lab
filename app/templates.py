@@ -151,6 +151,35 @@ def templates():
         out.append(_t(g11b, f"{SYM_NAME[sym]} TurtleMA 抱單過週末 WKX=0", "TurtleMA", sym, params={"WKX": 0},
                       note="波段策略週五強制出場會砍斷趨勢；看抱過週末（含跳空風險）是好是壞"))
 
+    # ⑫ AR_crossover 新出場：txf-sim 定案的 LOSSX 4／WINX 8／TwinX 0.8／TstopX 1.6（× 進場時 AvgRange(200)）
+    #    這邊的「單位」本來就是 AvgRange(UNIT_N)，所以等價寫法是 UNIT_N=200 加上同樣的倍數
+    ARX_NEW = {"UNIT_N": 200, "LOSS": 4, "WIN": 8, "Twin": 0.8, "Tstop": 1.6}
+    g12 = "⑫ AR_crossover 新出場（txf 定案：停損 4、停利 8、移動停利 0.8／回吐 1.6 × AvgRange(200)）"
+    for sym in ("NAS100", "US500", "JP225", "HK50"):
+        n = SYM_NAME[sym]
+        out += [
+            _t(g12, f"{n} AR 新出場｜Pepperstone 2018 起", "AR_crossover", sym, params=ARX_NEW,
+               start="2018-01-02", source="mt5-pepperstone", note="和下面「原出場」同一段資料比"),
+            _t(g12, f"{n} AR 原出場（對照）｜Pepperstone 2018 起", "AR_crossover", sym,
+               start="2018-01-02", source="mt5-pepperstone", note="原本 0.6／5.5／2.2／1.1 × AvgRange(100)"),
+        ]
+    out += [
+        _t(g12, "黃金 AR 新出場｜Dukascopy 2021 起", "AR_crossover", "XAUUSD", params=ARX_NEW),
+        _t(g12, "黃金 AR 原出場（對照）｜Dukascopy 2021 起", "AR_crossover", "XAUUSD"),
+        _t(g12, "那指 AR 新出場｜滑價加倍（每邊 1 點）", "AR_crossover", "NAS100", params=ARX_NEW, costs={"slippage": 1},
+           start="2018-01-02", source="mt5-pepperstone"),
+        _t(g12, "那指 AR_crossunder（空）新出場", "AR_crossunder", "NAS100", params=ARX_NEW,
+           start="2018-01-02", source="mt5-pepperstone", note="空方鏡像同樣換新出場，看能不能當保險"),
+    ]
+    g12b = "⑫b AR 新出場鄰近值掃描（LOSS × WIN × Twin × Tstop，180 組，每 2 年重挑）"
+    for sym in ("NAS100", "JP225"):
+        t = _t(g12b, f"{SYM_NAME[sym]} AR 新出場掃描", "AR_crossover", sym, params=ARX_NEW,
+               grid={"LOSS": [2, 6, 1], "WIN": [6, 12, 2], "Twin": [0.4, 1.2, 0.4], "Tstop": [0.8, 2.4, 0.8]},
+               start="2018-01-02", source="mt5-pepperstone",
+               note="看 4／8／0.8／1.6 是不是在平台上，以及滾動驗證（樣本外）站不站得住")
+        t.update(wf_k=3, wf_m=1)
+        out.append(t)
+
     for sym in ("NAS100", "HK50", "JP225"):
         n = SYM_NAME[sym]
         g = f"② 空方掃描：{n}（{sym}）"
