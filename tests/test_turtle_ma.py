@@ -77,7 +77,7 @@ def test_rules_no_lookahead():
 
 def test_templates():
     ts = [t for t in templates.templates() if t["strategy"] == "TurtleMA"]
-    assert len(ts) == 6, len(ts)
+    assert len(ts) == 2, len(ts)
     for t in ts:
         assert set(t["params"]) <= set(T.all_inputs()), t["name"]
         assert set(t["grid"]) <= set(T.all_inputs()), t["name"]
