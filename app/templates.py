@@ -126,7 +126,7 @@ def templates():
         _t(g10, "黃金多 AR_crossover", "AR_crossover", "XAUUSD"),
         _t(g10, "黃金 TMFF（多空）", "TMFF", "XAUUSD"),
         _t(g10, "黃金空 GuYuan_2024_S 台指參數", "GuYuan_2024_S", "XAUUSD", params=dict(TXF_PRESET["GuYuan_2024_S"])),
-        _t(g10, "黃金空 AR_crossunder", "AR_crossunder", "XAUUSD"),
+        _t(g10, "黃金空 AR_crossunder（低優先：台指與指數都沒有優勢）", "AR_crossunder", "XAUUSD"),
         _t(g10, "黃金空 TMFF_S", "TMFF_S", "XAUUSD"),
         _t(g10, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
            note="成本敏感度：滑價加倍還站得住才算數"),
@@ -168,7 +168,7 @@ def templates():
         _t(g12, "黃金 AR 原出場（對照）｜Dukascopy 2021 起", "AR_crossover", "XAUUSD"),
         _t(g12, "那指 AR 新出場｜滑價加倍（每邊 1 點）", "AR_crossover", "NAS100", params=ARX_NEW, costs={"slippage": 1},
            start="2018-01-02", source="mt5-pepperstone"),
-        _t(g12, "那指 AR_crossunder（空）新出場", "AR_crossunder", "NAS100", params=ARX_NEW,
+        _t(g12, "那指 AR_crossunder（空）新出場（已測：PF 0.88，淘汰）", "AR_crossunder", "NAS100", params=ARX_NEW,
            start="2018-01-02", source="mt5-pepperstone", note="空方鏡像同樣換新出場，看能不能當保險"),
     ]
     g12b = "⑫b AR 新出場鄰近值掃描（LOSS × WIN × Twin × Tstop，180 組，每 2 年重挑）"
@@ -177,6 +177,17 @@ def templates():
                grid={"LOSS": [2, 6, 1], "WIN": [6, 12, 2], "Twin": [0.4, 1.2, 0.4], "Tstop": [0.8, 2.4, 0.8]},
                start="2018-01-02", source="mt5-pepperstone",
                note="看 4／8／0.8／1.6 是不是在平台上，以及滾動驗證（樣本外）站不站得住")
+        t.update(wf_k=3, wf_m=1)
+        out.append(t)
+
+    # ⑫d txf 交接版網格：⑫b 從 LOSS 2、WIN 6 起掃，沒涵蓋較緊的一側；這組補 LOSS 1～4、WIN 4～8、Tstop 1.2
+    #     （交接寫 LOSS 1.3/2/2.5/3/4，平台分數需要等距，改成 1～4 每 0.5）
+    g12d = "⑫d AR 新出場：txf 交接版網格（LOSS 1～4 × WIN 4～8 × Twin 0.8/1.2 × Tstop 1.2/1.6，84 組）"
+    for sym in ("NAS100", "US500"):
+        t = _t(g12d, f"{SYM_NAME[sym]} AR 交接版網格掃描", "AR_crossover", sym, params=ARX_NEW,
+               grid={"LOSS": [1, 4, 0.5], "WIN": [4, 8, 2], "Twin": [0.8, 1.2, 0.4], "Tstop": [1.2, 1.6, 0.4]},
+               start="2018-01-02", source="mt5-pepperstone",
+               note="和 ⑫b／⑫c 互補：確認比較緊的停損停利（LOSS 1～2、WIN 4）是不是一樣比較差，台指結論是越寬越好")
         t.update(wf_k=3, wf_m=1)
         out.append(t)
 
@@ -213,7 +224,8 @@ def templates():
         out += [
             _t(g, f"{n} GuYuan_2024_S 趨勢濾網掃描", "GuYuan_2024_S", sym, params=dict(TXF_PRESET["GuYuan_2024_S"]),
                grid=GY_S_GRID, note="TF_N × MA2 × WIN × EBX，其他維持台指參數"),
-            _t(g, f"{n} AR_crossunder 掃描", "AR_crossunder", sym, grid=ARX_S_GRID, note="TF_N × LOSS × WIN"),
+            _t(g, f"{n} AR_crossunder 掃描（低優先：已測失敗）", "AR_crossunder", sym, grid=ARX_S_GRID,
+               note="TF_N × LOSS × WIN；2026-11 已測三個指數 PF 0.84～0.97，台指 60 組也全虧，不用再跑"),
             _t(g, f"{n} TMFF_S 掃描", "TMFF_S", sym, grid=TMFF_S_GRID, note="TF_N × SS × SLOSS × SWIN"),
         ]
     return out
