@@ -77,12 +77,10 @@ def test_rules_no_lookahead():
 
 def test_templates():
     ts = [t for t in templates.templates() if t["strategy"] == "TurtleMA"]
-    assert len(ts) == 21, len(ts)
+    assert len(ts) == 4, len(ts)
     for t in ts:
         assert set(t["params"]) <= set(T.all_inputs()), t["name"]
         assert set(t["grid"]) <= set(T.all_inputs()), t["name"]
-        if t["grid"]:
-            assert combos(t["grid"])[2] == 60, combos(t["grid"])[2]
 
 
 def test_corr_vs_guyuan2025():

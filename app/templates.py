@@ -1,14 +1,13 @@
-"""一鍵套用的回測／掃描範本（2026-11 空方互補研究）。
-資料一律用 Dukascopy 2021 起（含 2022 美股空頭、2021–22 恆指空頭），成本用商品預設（Pepperstone 點差＋滑價＋隔夜利息）。
-grid 空的 = 單純回測；有 grid = 最佳化（目標報酬／回撤、平台挑選、滾動驗證）。"""
+"""一鍵套用的回測／掃描範本：只留「還沒跑」的。
+跑完、分析完的就從這裡刪掉（結論記在 README 的「研究結論」）；完整歷史版本在 git 紀錄裡。
+grid 空的 = 單純回測；有 grid = 最佳化（目標報酬／回撤、平台挑選、滾動驗證）。成本用商品預設（Pepperstone 點差＋滑價＋隔夜利息）。"""
 from .strategies import TXF_PRESET
 
 START = "2021-02-05"          # Dukascopy 第一筆 2021-01-03，留一個月暖機
 SYM_NAME = {"NAS100": "那指", "HK50": "恆指", "JP225": "日經", "US500": "標普", "XAUUSD": "黃金"}
 
-GY_S_GRID = {"TF_N": [0, 200, 100], "MA2": [0, 100, 50], "WIN": [1.5, 4.5, 0.5], "EBX": [1, 2, 1]}      # 126 組
-ARX_S_GRID = {"TF_N": [0, 200, 100], "LOSS": [0.6, 1.2, 0.2], "WIN": [2, 5.5, 0.5]}                     # 96 組
-TMFF_S_GRID = {"TF_N": [0, 200, 100], "SS": [0, 0.4, 0.1], "SLOSS": [0.6, 1.4, 0.2], "SWIN": [1.8, 3.8, 1]}  # 225 組
+# AR_crossover 新出場：txf-sim 定案的停損 4／停利 8／移動停利 0.8／回吐 1.6 × AvgRange(200)（模擬倉 us_arx_new）
+ARX_NEW = {"UNIT_N": 200, "LOSS": 4, "WIN": 8, "Twin": 0.8, "Tstop": 1.6}
 
 
 def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=None, costs=None, start=START, end=None, source="duka"):
@@ -18,214 +17,44 @@ def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=N
 
 
 def templates():
-    out = [
-        _t("① 先驗證：現有多方在 2021 起的表現", "日經多 台指參數（模擬倉 jp_gy24）", "GuYuan_2024", "JP225",
-           note="看 2021–2023 橫盤與下跌期間虧多少"),
-        _t("① 先驗證：現有多方在 2021 起的表現", "日經多 WIN9（模擬倉 jp_gy24_w9）", "GuYuan_2024", "JP225",
-           params={"LOSS": 2, "WIN": 9, "EBX": 2}),
-        _t("① 先驗證：現有多方在 2021 起的表現", "那指多 AR_crossover（模擬倉 nas_arx）", "AR_crossover", "NAS100",
-           note="2022 空頭是重點"),
-        _t("①b 多方補驗證", "日經多 台指參數 EBX=4（交接文件版）", "GuYuan_2024", "JP225", params={"EBX": 4},
-           note="模擬倉 jp_gy24 是 EBX=0，這組看 EBX=4 在 2021 起差多少"),
-        _t("①b 多方補驗證", "日經多 台指參數＋日線濾網 TF_N=200", "GuYuan_2024", "JP225", params={"TF_N": 200},
-           note="前一日收盤在 200 日均線之上才進場，看能不能少虧空頭段"),
-        _t("①b 多方補驗證", "那指多 AR_crossover＋日線濾網 TF_N=200", "AR_crossover", "NAS100", params={"TF_N": 200},
-           note="2022 空頭期間應該幾乎不進場"),
-        _t("①b 多方補驗證", "日經多 GuYuan_2025（20 分 K）", "GuYuan_2025", "JP225",
-           note="之前另一段期間報酬/回撤 1.63，用同一段 2021 起重跑才能比"),
-    ]
-    g3 = "③ GuYuan_2025（目前最好的一支）"
+    out = []
+
+    # A. 標普 AR 新出場：最後兩項驗證（要先在「資料」頁下載 US500 Dukascopy，開始日填 2012-12-01，再看完整度）
+    gA = "A. 標普 AR 新出場（模擬倉 us_arx_new）：Dukascopy 樣本外"
     out += [
-        _t(g3, "日經 GuYuan_2025 掃描（HN × LOSS × WIN）", "GuYuan_2025", "JP225",
-           grid={"HN": [15, 35, 5], "LOSS": [0.6, 1.4, 0.2], "WIN": [4.2, 8.2, 1]}, note="125 組，MA1/MA2/ETD 維持原值"),
-        _t(g3, "那指 GuYuan_2025（預設）", "GuYuan_2025", "NAS100", note="看能不能用在別的指數"),
-        _t(g3, "標普 GuYuan_2025（預設）", "GuYuan_2025", "US500"),
-        _t(g3, "恆指 GuYuan_2025（預設）", "GuYuan_2025", "HK50"),
+        _t(gA, "標普 AR 新出場｜2013–2017 樣本外（Dukascopy）", "AR_crossover", "US500", params=ARX_NEW,
+           start="2013-01-02", end="2017-11-30",
+           note="Pepperstone 2017-08 以前每天只有約 1 根，不能用；含 2015-08、2016 年初修正"),
+        _t(gA, "標普 AR 新出場｜Dukascopy 2018 起（換資料來源對照）", "AR_crossover", "US500", params=ARX_NEW,
+           start="2018-01-02", note="Pepperstone 同期 PF 1.18；差很多就是資料問題"),
     ]
-    g4 = "④ 降低交易頻率（成本吃掉六成毛利）"
+
+    # B. 黃金：台指策略原封不動先跑一次（資料頁下載 XAUUSD，開始日填 2021-01-01）
+    gB = "B. 黃金 XAUUSD：台指策略先用原參數跑一次（2021 起，含 2022 下跌）"
     out += [
-        _t(g4, "日經 GuYuan_2024 改 120 分 K", "GuYuan_2024", "JP225", minutes=120, note="單位跟著 K 棒變大，交易數應該少一半左右"),
-        _t(g4, "日經 GuYuan_2025 改 40 分 K", "GuYuan_2025", "JP225", minutes=40),
-        _t(g4, "日經 GuYuan_2025 改 60 分 K", "GuYuan_2025", "JP225", minutes=60),
-    ]
-    g5 = "⑤ GuYuan_2025 候選確認（K 棒鄰近值、滑價加倍）"
-    out += [_t(g5, f"日經 GuYuan_2025 {m} 分 K", "GuYuan_2025", "JP225", minutes=m,
-               note="60 分 K 的 PF 1.32 是不是孤峰：看 50～120 分是否也不錯") for m in (50, 75, 90, 120)]
-    out += [_t(g5, f"那指 GuYuan_2025 {m} 分 K", "GuYuan_2025", "NAS100", minutes=m) for m in (30, 40, 60)]
-    out += [
-        _t(g5, "日經 GuYuan_2025 60 分 K｜滑價加倍（每邊 6 點）", "GuYuan_2025", "JP225", minutes=60, costs={"slippage": 6}),
-        _t(g5, "那指 GuYuan_2025 20 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", costs={"slippage": 1}),
-        _t(g5, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）逐年", "GuYuan_2024_S", "NAS100",
-           params=dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=100, EBX=2), note="空方掃描裡前後兩段都賺的區域，看 2022 年貢獻多少"),
-    ]
-    S_PARAMS = dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=100, EBX=2)
-    g6 = "⑥ 新組合的鄰近值檢查"
-    out += [_t(g6, f"那指 GuYuan_2025 {m} 分 K", "GuYuan_2025", "NAS100", minutes=m,
-               note="20→30→40→60 分一路變好，看 60 分之後是平台還是掉下去") for m in (75, 90, 120)]
-    out += [
-        _t(g6, "那指 GuYuan_2024_S 鄰近參數掃描（WIN × MA2 × EBX）", "GuYuan_2024_S", "NAS100", params=S_PARAMS,
-           grid={"WIN": [1.5, 2.5, 0.5], "MA2": [50, 150, 50], "EBX": [1, 3, 1]}, note="27 組，看 WIN 2／MA2 100／EBX 2 旁邊是不是也賺"),
-        _t(g6, "那指 GuYuan_2024_S 細掃 WIN 1.6～2.4", "GuYuan_2024_S", "NAS100", params=S_PARAMS,
-           grid={"WIN": [1.6, 2.4, 0.1]}, note="WIN 1.5 打平、2 賺、2.5 樣本外虧：看 2 是尖峰還是一段平緩的山丘"),
-        _t(g6, "那指 GuYuan_2024_S｜滑價加倍（每邊 1 點）", "GuYuan_2024_S", "NAS100", params=S_PARAMS, costs={"slippage": 1}),
-        _t(g6, "那指 GuYuan_2025 60 分 K｜滑價加倍（每邊 1 點）", "GuYuan_2025", "NAS100", minutes=60, costs={"slippage": 1}),
-    ]
-    g7 = "⑦ 真正的樣本外：2018–2020（要先在「資料」頁補下載，開始日填 2017-12-01）"
-    OS = dict(start="2018-01-02", end="2020-12-31")
-    out += [
-        _t(g7, "日經 GuYuan_2025 20 分 K｜2018–2020", "GuYuan_2025", "JP225", **OS, note="這段資料完全沒參與挑選，含 2018 Q4 下跌、2020 疫情崩跌"),
-        _t(g7, "那指 GuYuan_2025 60 分 K｜2018–2020", "GuYuan_2025", "NAS100", minutes=60, **OS),
-        _t(g7, "那指 GuYuan_2024_S（WIN 2、MA2 100、EBX 2）｜2018–2020", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **OS),
-    ]
-    g7b = "⑦b 同樣的樣本外，改用 Pepperstone MT5 補抓的資料（get_history.cmd）"
-    PS = dict(OS, source="mt5-pepperstone")
-    out += [
-        _t(g7b, "日經 GuYuan_2025 20 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "JP225", **PS),
-        _t(g7b, "那指 GuYuan_2025 60 分 K｜2018–2020｜Pepperstone", "GuYuan_2025", "NAS100", minutes=60, **PS),
-        _t(g7b, "那指 GuYuan_2024_S｜2018–2020｜Pepperstone", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PS),
-    ]
-    g7c = "⑦c 那指更早的樣本外 2013–2017（Dukascopy；先下載那指、開始日填 2012-12-01，再看完整度）"
-    PL = dict(start="2013-01-02", end="2017-11-30", source="duka")
-    out += [
-        _t(g7c, "那指 GuYuan_2025 60 分 K｜2013–2017", "GuYuan_2025", "NAS100", minutes=60, **PL,
-           note="含 2015 年 8 月、2016 年初的修正"),
-        _t(g7c, "那指 GuYuan_2024_S｜2013–2017", "GuYuan_2024_S", "NAS100", params=S_PARAMS, **PL),
-    ]
-    # ⑧ 調參頻率比較：同一段 2020→今天的測試期，比較「固定參數」和「每 2 年／每年／每半年用前 2 年重新挑參數」
-    g8 = "⑧ 調參頻率比較（Pepperstone 2018 起；測試期都是 2020 起）"
-    P8 = dict(start="2018-01-02", source="mt5-pepperstone")
-    WF = (("每 2 年重挑", 3, 1), ("每年重挑", 7, 2), ("每半年重挑", 14, 4))
-    for label, strat, sym, mins, base, grid in (
-            ("那指 GY25 60 分", "GuYuan_2025", "NAS100", 60, {}, {"HN": [15, 35, 10], "LOSS": [0.8, 1.4, 0.3], "WIN": [4.2, 8.2, 2]}),
-            ("那指 GY24_S", "GuYuan_2024_S", "NAS100", 60, S_PARAMS, {"WIN": [1.5, 2.5, 0.5], "MA2": [50, 150, 50], "EBX": [1, 3, 1]}),
-            ("日經 GY25 20 分", "GuYuan_2025", "JP225", 20, {}, {"HN": [15, 35, 10], "LOSS": [0.8, 1.4, 0.3], "WIN": [4.2, 8.2, 2]})):
-        out.append(_t(g8, f"{label}｜固定參數（不調）2020 起", strat, sym, minutes=mins, params=base, start="2020-01-02",
-                      source="mt5-pepperstone", note="對照組：一開始的參數一路用到底"))
-        for wl, k, m in WF:
-            t = _t(g8, f"{label}｜{wl}（滾動驗證）", strat, sym, minutes=mins, params=base, grid=grid, **P8,
-                   note=f"看結果的「滾動驗證」那段：k={k}、m={m}，每段約 {8.9 / (k + m):.1f} 年，用前 {8.9 * m / (k + m):.1f} 年挑參數")
-            t.update(wf_k=k, wf_m=m)
-            out.append(t)
-    # ⑨ 那指 GY25 擴大範圍：⑧ 每次都挑到 HN 35／LOSS 0.8，剛好在邊界上
-    g9 = "⑨ 那指 GY25 60 分：擴大掃描範圍（HN 25～55 × LOSS 0.5～1.1 × WIN 4.2～10.2，80 組）"
-    G9 = {"HN": [25, 55, 10], "LOSS": [0.5, 1.1, 0.15], "WIN": [4.2, 10.2, 2]}
-    for wl, k, m in (("每 2 年重挑", 3, 1), ("每年重挑", 7, 2)):
-        t = _t(g9, f"那指 GY25 60 分｜擴大範圍｜{wl}", "GuYuan_2025", "NAS100", minutes=60, grid=G9, **P8,
-               note="看滾動驗證每段挑到的參數是不是穩定落在同一區，以及平台是否還在邊界上")
-        t.update(wf_k=k, wf_m=m)
-        out.append(t)
-    out.append(_t(g9, "那指 GY25 60 分｜擴大範圍｜Dukascopy 2018 起（換資料來源對照）", "GuYuan_2025", "NAS100",
-                  minutes=60, grid=G9, start="2018-01-02", note="同一組掃描換 Dukascopy 跑，平台位置應該差不多"))
-    out[-1].update(wf_k=3, wf_m=1)
-    # ⑩ 黃金：台指策略原封不動先跑一次（先在「資料」頁下載 XAUUSD，開始日填 2021-01-01）
-    g10 = "⑩ 黃金 XAUUSD：台指策略先用原參數跑一次（2021 起，含 2022 下跌）"
-    out += [
-        _t(g10, "黃金多 GuYuan_2025（預設，20 分 K）", "GuYuan_2025", "XAUUSD", note="指數上目前最好的一支"),
-        _t(g10, "黃金多 GuYuan_2025 60 分 K", "GuYuan_2025", "XAUUSD", minutes=60, note="那指 60 分 K 比 20 分好，看黃金是不是一樣"),
-        _t(g10, "黃金多 GuYuan_2024 台指參數", "GuYuan_2024", "XAUUSD"),
-        _t(g10, "黃金多 AR_crossover", "AR_crossover", "XAUUSD"),
-        _t(g10, "黃金 TMFF（多空）", "TMFF", "XAUUSD"),
-        _t(g10, "黃金空 GuYuan_2024_S 台指參數", "GuYuan_2024_S", "XAUUSD", params=dict(TXF_PRESET["GuYuan_2024_S"])),
-        _t(g10, "黃金空 AR_crossunder（低優先：台指與指數都沒有優勢）", "AR_crossunder", "XAUUSD"),
-        _t(g10, "黃金空 TMFF_S", "TMFF_S", "XAUUSD"),
-        _t(g10, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
+        _t(gB, "黃金多 GuYuan_2025（預設，20 分 K）", "GuYuan_2025", "XAUUSD", note="指數上目前最好的一支"),
+        _t(gB, "黃金多 GuYuan_2025 60 分 K", "GuYuan_2025", "XAUUSD", minutes=60, note="那指 60 分 K 比 20 分好，看黃金是不是一樣"),
+        _t(gB, "黃金多 GuYuan_2024 台指參數", "GuYuan_2024", "XAUUSD"),
+        _t(gB, "黃金多 AR_crossover（原出場）", "AR_crossover", "XAUUSD"),
+        _t(gB, "黃金多 AR_crossover（新出場）", "AR_crossover", "XAUUSD", params=ARX_NEW, note="標普上明顯比原出場好"),
+        _t(gB, "黃金 TMFF（多空）", "TMFF", "XAUUSD"),
+        _t(gB, "黃金空 GuYuan_2024_S 台指參數", "GuYuan_2024_S", "XAUUSD", params=dict(TXF_PRESET["GuYuan_2024_S"])),
+        _t(gB, "黃金空 TMFF_S", "TMFF_S", "XAUUSD"),
+        _t(gB, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
            note="成本敏感度：滑價加倍還站得住才算數"),
     ]
-    # ⑪ 刀神海龜突破 + 均線三刀流：先用預設跑五個商品，多空分開看，再掃描
-    g11 = "⑪ TurtleMA（刀神海龜突破＋三刀流，60 分 K）：先跑預設，多空分開看"
-    for sym in ("NAS100", "US500", "JP225", "HK50", "XAUUSD"):
-        n = SYM_NAME[sym]
-        out += [
-            _t(g11, f"{n} TurtleMA 多空（預設）", "TurtleMA", sym, note="DC=80 ≈ 4 小時 20 根；20/60/240 均線；停損 3 單位、無固定停利"),
-            _t(g11, f"{n} TurtleMA 只做多", "TurtleMA", sym, params={"SIDE": 1}),
-            _t(g11, f"{n} TurtleMA 只做空", "TurtleMA", sym, params={"SIDE": -1}, note="空方是補位的重點"),
-        ]
-    g11b = "⑪b TurtleMA 掃描（DC × LOSS × SLP，60 組）"
-    for sym in ("NAS100", "JP225", "XAUUSD"):
-        out.append(_t(g11b, f"{SYM_NAME[sym]} TurtleMA 掃描", "TurtleMA", sym,
-                      grid={"DC": [40, 160, 40], "LOSS": [1.5, 3.5, 0.5], "SLP": [1, 5, 2]},
-                      note="均線維持 20/60/240；看平台分數，不挑孤峰"))
-    out.append(_t(g11b, "日經 TurtleMA 加關羽出場 X60=1", "TurtleMA", "JP225", params={"X60": 1},
-                  note="跌破 60MA 也出場，比較出場快慢"))
-    for sym in ("NAS100", "JP225"):
-        out.append(_t(g11b, f"{SYM_NAME[sym]} TurtleMA 抱單過週末 WKX=0", "TurtleMA", sym, params={"WKX": 0},
-                      note="波段策略週五強制出場會砍斷趨勢；看抱過週末（含跳空風險）是好是壞"))
 
-    # ⑫ AR_crossover 新出場：txf-sim 定案的 LOSSX 4／WINX 8／TwinX 0.8／TstopX 1.6（× 進場時 AvgRange(200)）
-    #    這邊的「單位」本來就是 AvgRange(UNIT_N)，所以等價寫法是 UNIT_N=200 加上同樣的倍數
-    ARX_NEW = {"UNIT_N": 200, "LOSS": 4, "WIN": 8, "Twin": 0.8, "Tstop": 1.6}
-    g12 = "⑫ AR_crossover 新出場（txf 定案：停損 4、停利 8、移動停利 0.8／回吐 1.6 × AvgRange(200)）"
-    for sym in ("NAS100", "US500", "JP225", "HK50"):
-        n = SYM_NAME[sym]
-        out += [
-            _t(g12, f"{n} AR 新出場｜Pepperstone 2018 起", "AR_crossover", sym, params=ARX_NEW,
-               start="2018-01-02", source="mt5-pepperstone", note="和下面「原出場」同一段資料比"),
-            _t(g12, f"{n} AR 原出場（對照）｜Pepperstone 2018 起", "AR_crossover", sym,
-               start="2018-01-02", source="mt5-pepperstone", note="原本 0.6／5.5／2.2／1.1 × AvgRange(100)"),
-        ]
+    # C. TurtleMA 最後一次機會：只做多的真正波段版（關斜率出場、跌破 60MA 才出、抱過週末）
+    #    原版已結案（四個指數多空全虧、空方毛利就是負的，見 README）；報酬／回撤打不贏同期 GuYuan_2025 就結案
+    gC = "C. TurtleMA 波段版（只做多、XS=0、X60=1、WKX=0）vs 同期 GuYuan_2025（Dukascopy 2021 起）"
+    SWING = {"SIDE": 1, "XS": 0, "X60": 1, "WKX": 0}
     out += [
-        _t(g12, "黃金 AR 新出場｜Dukascopy 2021 起", "AR_crossover", "XAUUSD", params=ARX_NEW),
-        _t(g12, "黃金 AR 原出場（對照）｜Dukascopy 2021 起", "AR_crossover", "XAUUSD"),
-        _t(g12, "那指 AR 新出場｜滑價加倍（每邊 1 點）", "AR_crossover", "NAS100", params=ARX_NEW, costs={"slippage": 1},
-           start="2018-01-02", source="mt5-pepperstone"),
-        _t(g12, "那指 AR_crossunder（空）新出場（已測：PF 0.88，淘汰）", "AR_crossunder", "NAS100", params=ARX_NEW,
-           start="2018-01-02", source="mt5-pepperstone", note="空方鏡像同樣換新出場，看能不能當保險"),
+        _t(gC, "那指 TurtleMA 波段版", "TurtleMA", "NAS100", params=SWING,
+           note="關掉 20MA 斜率出場（原本九成出場是它，平均只抱 11 小時），跌破 60MA 才出、抱過週末"),
+        _t(gC, "那指 GuYuan_2025 60 分（對照，模擬倉 nas_gy25_60）", "GuYuan_2025", "NAS100", minutes=60),
+        _t(gC, "日經 TurtleMA 波段版", "TurtleMA", "JP225", params=SWING),
+        _t(gC, "日經 GuYuan_2025 20 分（對照，模擬倉 jp_gy25）", "GuYuan_2025", "JP225"),
+        _t(gC, "黃金 TurtleMA 預設（多空）", "TurtleMA", "XAUUSD", note="黃金資料下載完再跑"),
+        _t(gC, "黃金 TurtleMA 波段版", "TurtleMA", "XAUUSD", params=SWING, note="黃金資料下載完再跑；對照組是 B 的黃金 GuYuan_2025"),
     ]
-    g12b = "⑫b AR 新出場鄰近值掃描（LOSS × WIN × Twin × Tstop，180 組，每 2 年重挑）"
-    for sym in ("NAS100", "JP225"):
-        t = _t(g12b, f"{SYM_NAME[sym]} AR 新出場掃描", "AR_crossover", sym, params=ARX_NEW,
-               grid={"LOSS": [2, 6, 1], "WIN": [6, 12, 2], "Twin": [0.4, 1.2, 0.4], "Tstop": [0.8, 2.4, 0.8]},
-               start="2018-01-02", source="mt5-pepperstone",
-               note="看 4／8／0.8／1.6 是不是在平台上，以及滾動驗證（樣本外）站不站得住")
-        t.update(wf_k=3, wf_m=1)
-        out.append(t)
-
-    # ⑫d txf 交接版網格：⑫b 從 LOSS 2、WIN 6 起掃，沒涵蓋較緊的一側；這組補 LOSS 1～4、WIN 4～8、Tstop 1.2
-    #     （交接寫 LOSS 1.3/2/2.5/3/4，平台分數需要等距，改成 1～4 每 0.5）
-    g12d = "⑫d AR 新出場：txf 交接版網格（LOSS 1～4 × WIN 4～8 × Twin 0.8/1.2 × Tstop 1.2/1.6，84 組）"
-    for sym in ("NAS100", "US500"):
-        t = _t(g12d, f"{SYM_NAME[sym]} AR 交接版網格掃描", "AR_crossover", sym, params=ARX_NEW,
-               grid={"LOSS": [1, 4, 0.5], "WIN": [4, 8, 2], "Twin": [0.8, 1.2, 0.4], "Tstop": [1.2, 1.6, 0.4]},
-               start="2018-01-02", source="mt5-pepperstone",
-               note="和 ⑫b／⑫c 互補：確認比較緊的停損停利（LOSS 1～2、WIN 4）是不是一樣比較差，台指結論是越寬越好")
-        t.update(wf_k=3, wf_m=1)
-        out.append(t)
-
-    # ⑫c 候選確認：⑫ 只有標普 AR 新出場明顯變好（PF 1.18、回撤 9.9%），恆指 GY24_S 是 ② 唯一像樣的空方
-    g12c = "⑫c 候選確認：標普 AR 新出場、恆指 GY24_S 空方、與那指 GY25 的組合"
-    PS18 = dict(start="2018-01-02", source="mt5-pepperstone")
-    HK_S = dict(TXF_PRESET["GuYuan_2024_S"], WIN=2, MA2=50, TF_N=100, EBX=2)
-    t = _t(g12c, "標普 AR 新出場掃描（180 組，每 2 年重挑）", "AR_crossover", "US500", params=ARX_NEW,
-           grid={"LOSS": [2, 6, 1], "WIN": [6, 12, 2], "Twin": [0.4, 1.2, 0.4], "Tstop": [0.8, 2.4, 0.8]}, **PS18,
-           note="看 4／8／0.8／1.6 周圍是不是一整片都好（平台），而不是孤峰")
-    t.update(wf_k=3, wf_m=1)
-    out.append(t)
-    out += [
-        _t(g12c, "標普 AR 新出場｜滑價加倍（每邊 0.4）", "AR_crossover", "US500", params=ARX_NEW,
-           costs={"slippage": 0.4}, **PS18, note="成本敏感度"),
-        _t(g12c, "標普 AR 新出場｜2013–2017 樣本外（Dukascopy）", "AR_crossover", "US500", params=ARX_NEW,
-           start="2013-01-02", end="2017-11-30", source="duka",
-           note="要先在「資料」頁下載 US500 Dukascopy，開始日填 2012-12-01；含 2015-08、2016 年初修正"),
-        _t(g12c, "標普 AR 新出場｜Dukascopy 2018 起（換資料來源對照）", "AR_crossover", "US500", params=ARX_NEW,
-           start="2018-01-02", source="duka", note="和 Pepperstone 結果應該接近，差很多就是資料問題"),
-        _t(g12c, "恆指 GY24_S 好區參數｜2018–2020 樣本外（Pepperstone）", "GuYuan_2024_S", "HK50", params=HK_S,
-           start="2018-01-02", end="2020-12-31", source="mt5-pepperstone",
-           note="WIN 2、MA2 50、TF_N 100、EBX 2；這段沒參與 ② 的挑選，含 2018 下跌、2019 反送中、2020 疫情"),
-        _t(g12c, "恆指 GY24_S 好區參數｜Pepperstone 2018 起全段", "GuYuan_2024_S", "HK50", params=HK_S, **PS18),
-        _t(g12c, "恆指 GY24_S 好區參數｜滑價加倍（每邊 2 點）", "GuYuan_2024_S", "HK50", params=HK_S,
-           costs={"slippage": 2}, **PS18),
-        _t(g12c, "那指 GY25 60 分（模擬倉 nas_gy25_60）｜Pepperstone 2018 起", "GuYuan_2025", "NAS100", minutes=60, **PS18,
-           note="組合用：和上面標普 AR、恆指 GY24_S 同一段期間，一起匯出 CSV 我算相關性和合併回撤"),
-    ]
-
-    for sym in ("NAS100", "HK50", "JP225"):
-        n = SYM_NAME[sym]
-        g = f"② 空方掃描：{n}（{sym}）"
-        out += [
-            _t(g, f"{n} GuYuan_2024_S 趨勢濾網掃描", "GuYuan_2024_S", sym, params=dict(TXF_PRESET["GuYuan_2024_S"]),
-               grid=GY_S_GRID, note="TF_N × MA2 × WIN × EBX，其他維持台指參數"),
-            _t(g, f"{n} AR_crossunder 掃描（低優先：已測失敗）", "AR_crossunder", sym, grid=ARX_S_GRID,
-               note="TF_N × LOSS × WIN；2026-11 已測三個指數 PF 0.84～0.97，台指 60 組也全虧，不用再跑"),
-            _t(g, f"{n} TMFF_S 掃描", "TMFF_S", sym, grid=TMFF_S_GRID, note="TF_N × SS × SLOSS × SWIN"),
-        ]
     return out
