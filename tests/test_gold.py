@@ -61,7 +61,7 @@ def test_all_strategies_run():
 
 def test_templates():
     ts = [t for t in templates.templates() if t["symbol"] == "XAUUSD" and t["group"].startswith("B.")]
-    assert len(ts) == 9, len(ts)
+    assert len(ts) == 6, len(ts)
     for t in ts:
         assert t["strategy"] in REGISTRY, t
         cls = REGISTRY[t["strategy"]]

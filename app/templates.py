@@ -29,26 +29,21 @@ def templates():
            start="2018-01-02", note="Pepperstone 同期 PF 1.18；差很多就是資料問題"),
     ]
 
-    # B. 黃金：台指策略原封不動先跑一次（資料頁下載 XAUUSD，開始日填 2021-01-01）
-    gB = "B. 黃金 XAUUSD：台指策略先用原參數跑一次（2021 起，含 2022 下跌）"
+    # B. 黃金 GuYuan_2025 60 分 K：候選確認
+    #    Dukascopy 2021 起：年化 6.5%、回撤 10.5%、PF 1.37，和那指 GY25、標普 AR 相關 ≈ 0；其他策略見 README（已結案）
+    gB = "B. 黃金 GuYuan_2025 60 分 K：候選確認（預設 HN 25、LOSS 1.0、WIN 6.2）"
+    t = _t(gB, "黃金 GY25 60 分 鄰近值掃描（HN × LOSS × WIN，80 組，每 2 年重挑）", "GuYuan_2025", "XAUUSD", minutes=60,
+           grid={"HN": [25, 55, 10], "LOSS": [0.5, 1.1, 0.15], "WIN": [4.2, 10.2, 2]},
+           note="和那指 ⑨ 同一張網格；看預設是不是在平台上、樣本內排名對樣本外有沒有預測力")
+    t.update(wf_k=3, wf_m=1)
     out += [
-        _t(gB, "黃金多 GuYuan_2025（預設，20 分 K）", "GuYuan_2025", "XAUUSD", note="指數上目前最好的一支"),
-        _t(gB, "黃金多 GuYuan_2025 60 分 K", "GuYuan_2025", "XAUUSD", minutes=60, note="那指 60 分 K 比 20 分好，看黃金是不是一樣"),
-        _t(gB, "黃金多 GuYuan_2024 台指參數", "GuYuan_2024", "XAUUSD"),
-        _t(gB, "黃金多 AR_crossover（原出場）", "AR_crossover", "XAUUSD"),
-        _t(gB, "黃金多 AR_crossover（新出場）", "AR_crossover", "XAUUSD", params=ARX_NEW, note="標普上明顯比原出場好"),
-        _t(gB, "黃金 TMFF（多空）", "TMFF", "XAUUSD"),
-        _t(gB, "黃金空 GuYuan_2024_S 台指參數", "GuYuan_2024_S", "XAUUSD", params=dict(TXF_PRESET["GuYuan_2024_S"])),
-        _t(gB, "黃金空 TMFF_S", "TMFF_S", "XAUUSD"),
-        _t(gB, "黃金多 GuYuan_2025｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", costs={"slippage": 0.2},
-           note="成本敏感度：滑價加倍還站得住才算數"),
+        _t(gB, "黃金 GY25 60 分｜滑價加倍（每邊 0.2）", "GuYuan_2025", "XAUUSD", minutes=60, costs={"slippage": 0.2},
+           note="20 分 K 滑價加倍就垮（PF 1.08）；60 分 K 交易少很多，看撐不撐得住"),
+        t,
     ]
-
-    # C. TurtleMA：指數上已結案（README）。只剩黃金待跑
-    SWING = {"SIDE": 1, "XS": 0, "X60": 1, "WKX": 0}      # 只做多波段版：關斜率出場、跌破 60MA 才出、抱過週末
-    gC2 = "C. 黃金 TurtleMA（黃金資料下載完再跑）"
-    out += [
-        _t(gC2, "黃金 TurtleMA 預設（多空）", "TurtleMA", "XAUUSD"),
-        _t(gC2, "黃金 TurtleMA 波段版", "TurtleMA", "XAUUSD", params=SWING, note="對照組是 B 的黃金 GuYuan_2025"),
-    ]
+    out += [_t(gB, f"黃金 GY25 {m} 分 K（K 棒鄰近值）", "GuYuan_2025", "XAUUSD", minutes=m,
+               note="60 分是不是孤峰") for m in (45, 75, 90)]
+    out.append(_t(gB, "黃金 GY25 60 分｜2018–2020 樣本外（Dukascopy）", "GuYuan_2025", "XAUUSD", minutes=60,
+                  start="2018-01-02", end="2020-12-31",
+                  note="要先在「資料」頁補下載黃金，開始日填 2017-12-01；含 2018 盤整下跌、2019–2020 大漲、2020-03 崩跌"))
     return out
