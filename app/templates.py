@@ -19,13 +19,5 @@ def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=N
 def templates():
     out = []
 
-    # B. 黃金 GuYuan_2025 60 分 K：只剩真正的樣本外（滑價加倍、鄰近值掃描、K 棒 45～90 分都過了，見 README）
-    gB = "B. 黃金 GuYuan_2025 60 分 K：2018–2020 樣本外（預設 HN 25、LOSS 1.0、WIN 6.2）"
-    out += [
-        _t(gB, "黃金 GY25 60 分｜2018–2020 樣本外（Dukascopy）", "GuYuan_2025", "XAUUSD", minutes=60,
-           start="2018-01-02", end="2020-12-31",
-           note="要先在「資料」頁補下載黃金，開始日填 2017-12-01；含 2018 盤整下跌、2019–2020 大漲、2020-03 崩跌"),
-        _t(gB, "黃金 GY25 90 分｜2018–2020 樣本外（Dukascopy）", "GuYuan_2025", "XAUUSD", minutes=90,
-           start="2018-01-02", end="2020-12-31", note="90 分在 2021 起最好（0.68），一起看樣本外"),
-    ]
+    # 目前沒有待跑的範本（全部結論在 README「研究結論」）
     return out
