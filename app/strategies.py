@@ -298,4 +298,6 @@ class TurtleMA(Strategy):
                 self.sellshort_market("海龜偏空 + 空頭排列")
 
 
-REGISTRY = {c.name: c for c in (TMFF, TMFFShort, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025, TurtleMA)}
+from .patterns import Pattern  # noqa: E402  古典型態（2026-11-28）
+
+REGISTRY = {c.name: c for c in (TMFF, TMFFShort, ARCrossover, ARCrossunder, GuYuan2024, GuYuan2024Short, GuYuan2025, TurtleMA, Pattern)}

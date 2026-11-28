@@ -19,5 +19,17 @@ def _t(group, name, strategy, symbol, params=None, grid=None, note="", minutes=N
 def templates():
     out = []
 
-    # 目前沒有待跑的範本（全部結論在 README「研究結論」）
+    # 古典型態（2026-11-28）：Pattern 策略，先看各型態、多空分開有沒有優勢，再看參數平台
+    g = "古典型態 Pattern（2026-11-28）"
+    for sym in ("NAS100", "US500", "JP225", "HK50", "XAUUSD"):
+        out.append(dict(_t(g, f"① {SYM_NAME[sym]}：各型態 × 多空 × 週末出場", "Pattern", sym,
+                           grid={"PAT": [1, 6, 1], "SIDE": [-1, 1, 2], "WKX": [0, 15, 15]},
+                           note="24 組：每一列 = 一種型態的單一方向（PAT 1 雙頂底、2 三重頂底、3 頭肩、4 上升／下降三角形、5 對稱三角形、6 楔形；"
+                                "SIDE 1 多、-1 空；WKX 0 抱過週末、15 週五出場）。先看哪幾列交易數夠、PF > 1.2、樣本外也賺。"
+                                "這是分類表不是參數，挑選方式用「只看自己」。"), rank_by="self", min_trades=15))
+    for sym in ("NAS100", "US500", "JP225", "HK50", "XAUUSD"):
+        out.append(dict(_t(g, f"② {SYM_NAME[sym]}：ZZ × TPX × SLB 平台（全部型態、多空）", "Pattern", sym,
+                           grid={"ZZ": [2, 6, 1], "TPX": [0.6, 1.6, 0.2], "SLB": [0, 0.6, 0.2]},
+                           note="120 組：轉折門檻、量度目標倍數、停損緩衝。看參數面是不是一整片都賺，還是只有孤峰。"
+                                "①找到有優勢的型態後，把 PAT／SIDE 改成那一組再跑一次這個掃描。"), min_trades=30))
     return out

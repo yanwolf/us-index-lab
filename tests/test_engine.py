@@ -23,7 +23,9 @@ def test_all():
         for t in tr:
             et_in = pd.Timestamp(t["entry_ts"], unit="s", tz="UTC").tz_convert("America/New_York")
             et_out = pd.Timestamp(t["exit_ts"], unit="s", tz="UTC").tz_convert("America/New_York")
-            assert (et_out - et_in).days < 4, (name, t)
+            # 同一個交易週（週日 18:00 開盤 +6 小時 = 週一 00:00，再取 ISO 週）；原本用「< 4 天」，週一進週五出會誤判
+            wk = lambda x: (x + pd.Timedelta(hours=6)).isocalendar()[:2]
+            assert wk(et_in) == wk(et_out), (name, t)
             assert t["exit_ts"] >= t["entry_ts"]
         if cls.name in ("AR_crossover", "GuYuan_2024", "GuYuan_2025"):
             assert all(t["dir"] == 1 for t in tr)
@@ -68,7 +70,9 @@ def test_jp():
         for t in r["trades"]:
             et_in = pd.Timestamp(t["entry_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
             et_out = pd.Timestamp(t["exit_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
-            assert (et_out - et_in).total_seconds() < 4 * 86400, (name, t)
+            # 同一個交易週（週一 08:45 開、週六 06:00 收；往前移 7 小時後取 ISO 週）
+            wk7 = lambda x: (x - pd.Timedelta(hours=7)).isocalendar()[:2]
+            assert wk7(et_in) == wk7(et_out), (name, t)
         wk = [t for t in r["trades"] if t["out"] == "週末出場"]
         if wk:
             ot = pd.Timestamp(wk[0]["exit_ts"], unit="s", tz="UTC").tz_convert("Asia/Tokyo")
